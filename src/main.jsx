@@ -140,7 +140,7 @@ function App() {
         {route.page === 'home' && <Home go={go} />}
         {route.page === 'explore' && <SearchPage go={go} />}
         {route.page === 'eras' && <Eras />}
-        {route.page === 'countries' && <Countries />}
+        {route.page === 'countries' && <Countries go={go} />}
         {route.page === 'conflicts' && <Conflicts go={go} />}
         {route.page === 'sources' && <Sources />}
         {route.page === 'settings' && <SettingsPage />}
@@ -173,7 +173,7 @@ function Home({ go }) {
           </div>
           <div className="stat-grid">
             <Stat value="5" label="эпох" />
-            <Stat value="6" label="стран" />
+            <Stat value="207" label="стран" />
             <Stat value="8" label="конфликтов" />
             <Stat value="13+" label="источников" />
           </div>
@@ -222,26 +222,28 @@ function Eras() {
   );
 }
 
-function Countries() {
+function Countries({ go }) {
   const [region, setRegion] = useState('Все');
   const regions = ['Все', ...new Set(countries.map((c) => c.region))];
   const list = region === 'Все' ? countries : countries.filter((c) => c.region === region);
   return (
     <section className="page">
-      <PageTitle icon={Flag} eyebrow="история стран" title="Национальные истории в мировом контексте" text="Сравнивайте пути государств: институты, кризисы, культура, войны, источники и длительные процессы." />
+      <PageTitle icon={Flag} eyebrow="история стран" title="Национальные истории в мировом контексте" text="Сравнивайте пути государств: институты, кризисы, культура, войны, источники и длительные процессы. Нажмите на страну, чтобы открыть её досье." />
       <div className="filters country-filter">
         {regions.map((r) => <button key={r} className={region === r ? 'active' : ''} onClick={() => setRegion(r)}>{r}</button>)}
       </div>
       <div className="country-grid">
         {list.map((country) => (
           <article className="country-card glass" key={country.id}>
-            <div className="country-flag">{country.flag}</div>
-            <span>{country.region}</span>
-            <h3>{country.name}</h3>
-            <b>{country.timeline}</b>
-            <p>{country.core}</p>
-            <div className="chips">{country.topics.map((t) => <em key={t}>{t}</em>)}</div>
-            <div className="source-line"><BookOpen size={16} /> {country.sources.join(' • ')}</div>
+            <button className="country-card-link" onClick={() => go(`/dossier/${encodeURIComponent(country.id)}`)} aria-label={`Открыть досье ${country.name}`}>
+              <div className="country-flag">{country.flag}</div>
+              <span>{country.region}</span>
+              <h3>{country.name}</h3>
+              <b>{country.timeline}</b>
+              <p>{country.core}</p>
+              <div className="chips">{country.topics.map((t) => <em key={t}>{t}</em>)}</div>
+              <div className="source-line"><BookOpen size={16} /> {country.sources.join(' • ')}</div>
+            </button>
           </article>
         ))}
       </div>
