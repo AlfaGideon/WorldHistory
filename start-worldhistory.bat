@@ -27,6 +27,58 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem --- Проверка окружения и обновлений Node.js и npm (с кэшем на сутки) ---
+where powershell >nul 2>nul
+if not errorlevel 1 goto wh_update_check
+echo [ВНИМАНИЕ] PowerShell не найден - пропускаю проверку обновлений Node.js.
+goto wh_update_done
+
+:wh_update_check
+echo.
+echo Проверяю окружение и обновления Node.js...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check-node-updates.ps1"
+if errorlevel 2 goto wh_update_ask
+goto wh_update_done
+
+:wh_update_ask
+where winget >nul 2>nul
+if errorlevel 1 goto wh_update_manual
+choice /c 123 /n /m "Доступно обновление Node.js. 1 - обновить через winget, 2 - открыть nodejs.org, 3 - продолжить без обновления: "
+if errorlevel 3 goto wh_update_done
+if errorlevel 2 goto wh_update_page
+echo.
+echo Запускаю обновление Node.js через winget. Может появиться запрос UAC - нажмите Да.
+winget upgrade --id OpenJS.NodeJS.LTS --exact --accept-source-agreements --accept-package-agreements
+if "%ERRORLEVEL%"=="0" goto wh_update_done_msg
+echo winget не нашёл версию для обновления - пробую установить LTS поверх текущей...
+winget install --id OpenJS.NodeJS.LTS --exact --accept-source-agreements --accept-package-agreements
+if "%ERRORLEVEL%"=="0" goto wh_update_done_msg
+echo [ОШИБКА] Автообновление не получилось. Скачайте LTS вручную: https://nodejs.org/
+pause
+exit /b 1
+
+:wh_update_done_msg
+echo.
+echo Обновление Node.js завершено. Запустите батник заново.
+pause
+exit /b 1
+
+:wh_update_page
+start "" "https://nodejs.org/"
+echo Установите LTS-версию с сайта, затем запустите батник заново.
+pause
+exit /b 1
+
+:wh_update_manual
+choice /c YN /n /m "Открыть страницу загрузки Node.js? [Y - да, N - продолжить без обновления]: "
+if errorlevel 2 goto wh_update_done
+start "" "https://nodejs.org/"
+echo Установите LTS-версию с сайта, затем запустите батник заново.
+pause
+exit /b 1
+
+:wh_update_done
+
 rem Если порты уже заняты - скорее всего, приложение запущено с прошлого раза.
 powershell -NoProfile -Command "foreach($p in 3001,5173){try{$c=New-Object Net.Sockets.TcpClient;$c.Connect('127.0.0.1',$p);$c.Close();exit 1}catch{}}" >nul 2>nul
 if errorlevel 1 (
