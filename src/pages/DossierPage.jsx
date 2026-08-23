@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Clock3, ExternalLink, Eye, Info, Scale, Shield, Sparkles } from 'lucide-react';
-import { getDossier } from '../api/client';
+import { createDossierFallback, getDossier } from '../api/client';
 import { allRecords, normalizeText } from '../utils/historyRecords';
 
 const tabs = [
@@ -14,20 +14,20 @@ const tabs = [
 export default function DossierPage({ dossierId, go }) {
   const record = allRecords.find((item) => item.id === dossierId || normalizeText(item.title) === normalizeText(dossierId));
   const [data, setData] = useState(null);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
     if (!record) {
       getDossier(dossierId)
         .then((value) => active && setData(value))
-        .catch(() => active && setError('Сервис временно недоступен. Попробуйте обновить страницу.'));
+        // A dossier must remain available when a static deployment cannot
+        // reach its optional API. The fallback makes no factual claims.
+        .catch(() => active && setData(createDossierFallback(dossierId)));
     }
     return () => { active = false; };
   }, [dossierId, record]);
 
   if (record) return <LocalDossier record={record} go={go} />;
-  if (error) return <StatusPage title="Сервис временно недоступен" text={error} go={go} />;
   if (!data) return <section className="page dossier-page"><div className="dossier glass loading-state">Строим исследовательский план…</div></section>;
   return <UniversalDossier data={data} go={go} />;
 }
@@ -36,16 +36,12 @@ function Breadcrumbs({ title, go }) {
   return <div className="breadcrumbs"><button onClick={() => go('home')}>Главная</button><span>→</span><button onClick={() => go('explore')}>Поиск</button><span>→</span><b>{title}</b></div>;
 }
 
-function StatusPage({ title, text, go }) {
-  return <section className="page dossier-page"><div className="dossier glass"><h2>{title}</h2><p>{text}</p><button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button></div></section>;
-}
-
 function UniversalDossier({ data, go }) {
   const view = useMemo(() => ({
     title: data.title,
     eyebrow: 'универсальное досье',
     icon: Sparkles,
-    meta: `${data.entityType} • ${data.status === 'needs-live-research' ? 'источники временно недоступны' : 'данные из внешних источников'}`,
+    meta: `${data.entityType} • ${data.status === 'live-multi-source' ? 'данные из внешних источников' : 'план исследования без неподтверждённых фактов'}`,
     summary: data.brief || data.summary,
     info: data.infobox || {
       type: data.entityType,
