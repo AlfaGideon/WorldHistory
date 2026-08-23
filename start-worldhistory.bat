@@ -89,15 +89,28 @@ if errorlevel 1 (
   timeout /t 5 /nobreak >nul
 )
 
-if not exist node_modules (
-  echo Устанавливаю зависимости. Это нужно только при первом запуске...
-  call npm install
-  if errorlevel 1 (
-    echo [ОШИБКА] Не удалось установить зависимости.
-    pause
-    exit /b 1
-  )
+rem --- Зависимости: ставим не только когда node_modules отсутствует,
+rem но и когда состав пакетов менялся или часть пакетов потеряна.
+rem Именно так выглядит ошибка "Cannot find package 'undici'" - backend падает,
+rem а в браузере остаётся 502.
+set WH_NEED_INSTALL=0
+if not exist "node_modules\.package-lock.json" set WH_NEED_INSTALL=1
+if "%WH_NEED_INSTALL%"=="0" powershell -NoProfile -Command "$deps=@('express','cors','undici','cheerio','concurrently','vite','react','react-dom','lucide-react','@vitejs/plugin-react'); foreach($d in $deps){ if(-not (Test-Path (Join-Path 'node_modules' $d))){ exit 1 } }; if((Get-Item 'package.json').LastWriteTime -gt (Get-Item 'node_modules\.package-lock.json').LastWriteTime){ exit 1 }" >nul 2>nul
+if not errorlevel 1 goto wh_deps_ok
+set WH_NEED_INSTALL=1
+:wh_deps_ok
+if "%WH_NEED_INSTALL%"=="0" goto wh_deps_done
+echo.
+echo Зависимости отсутствуют или устарели. Устанавливаю/дополняю их...
+call npm install
+if errorlevel 1 (
+  echo [ОШИБКА] Не удалось установить зависимости. Проверьте интернет-соединение.
+  echo Если ошибка повторяется: удалите папку node_modules и запустите батник заново.
+  pause
+  exit /b 1
 )
+echo Зависимости установлены.
+:wh_deps_done
 
 echo.
 echo Батник запускает ОБА сервера: frontend (Vite, порт 5173) и backend (API, порт 3001).
