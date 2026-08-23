@@ -45,6 +45,8 @@ test('dossier is still returned when every provider is unavailable', async () =>
   assert.equal(body.status, 'needs-live-research');
   assert.equal(body.title, 'offline');
   assert.deepEqual(body.sources, []);
+  assert.equal(body.infobox.confidence, 'низкая');
+  assert.ok(body.disputedClaims.length > 0);
   assert.ok(body.researchPipeline.length > 0);
 });
 

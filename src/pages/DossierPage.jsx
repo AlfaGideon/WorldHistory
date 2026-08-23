@@ -1,7 +1,15 @@
-import { useEffect, useState } from 'react';
-import { ExternalLink, Shield, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { BookOpen, Clock3, ExternalLink, Eye, Info, Scale, Shield, Sparkles } from 'lucide-react';
 import { getDossier } from '../api/client';
 import { allRecords, normalizeText } from '../utils/historyRecords';
+
+const tabs = [
+  { id: 'overview', label: 'Обзор', icon: Info },
+  { id: 'timeline', label: 'Хронология', icon: Clock3 },
+  { id: 'perspectives', label: 'Стороны', icon: Eye },
+  { id: 'claims', label: 'Спорное', icon: Scale },
+  { id: 'sources', label: 'Источники', icon: BookOpen },
+];
 
 export default function DossierPage({ dossierId, go }) {
   const record = allRecords.find((item) => item.id === dossierId || normalizeText(item.title) === normalizeText(dossierId));
@@ -10,108 +18,149 @@ export default function DossierPage({ dossierId, go }) {
 
   useEffect(() => {
     let active = true;
-
-    // Готовое локальное досье не должно зависеть от доступности внешнего API.
     if (!record) {
       getDossier(dossierId)
         .then((value) => active && setData(value))
         .catch(() => active && setError('Сервис временно недоступен. Попробуйте обновить страницу.'));
     }
-
     return () => { active = false; };
   }, [dossierId, record]);
 
-  if (record) return <section className="page dossier-page"><div className="breadcrumbs"><button onClick={() => go('home')}>Главная</button><span>→</span><button onClick={() => go('explore')}>Поиск</button><span>→</span><b>{record.title}</b></div><Dossier record={record} onClose={() => go('explore')} /></section>;
-  if (error) return <section className="page dossier-page"><div className="dossier glass"><h2>Сервис временно недоступен</h2><p>{error}</p><button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button></div></section>;
+  if (record) return <LocalDossier record={record} go={go} />;
+  if (error) return <StatusPage title="Сервис временно недоступен" text={error} go={go} />;
   if (!data) return <section className="page dossier-page"><div className="dossier glass loading-state">Строим исследовательский план…</div></section>;
   return <UniversalDossier data={data} go={go} />;
 }
 
-function UniversalDossier({ data, go }) {
-  return <section className="page dossier-page"><div className="breadcrumbs"><button onClick={() => go('home')}>Главная</button><span>→</span><button onClick={() => go('explore')}>Поиск</button><span>→</span><b>{data.title}</b></div><article className="dossier glass"><div className="dossier-head"><div><span className="eyebrow"><Sparkles size={16} /> универсальное досье</span><h2>{data.title}</h2><p>{data.entityType} • {data.status === 'needs-live-research' ? 'внешние источники временно недоступны' : 'данные из внешних источников'}</p></div><button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button></div><p className="dossier-summary">{data.summary}</p><section className="dossier-section"><h3>Быстрые факты</h3><div className="fact-list">{data.quickFacts.map((fact) => <div className="fact-row" key={fact.label}><div><b>{fact.label}</b><p>{fact.value}</p></div><span>уточняется</span></div>)}</div></section><section className="dossier-section"><h3>План исследования</h3><ol>{data.researchPipeline.map((step) => <li key={step}>{step}</li>)}</ol></section><section className="dossier-section"><h3>Точки зрения</h3><div className="perspective-grid">{data.perspectives.map((view) => <div className="perspective" key={view.side}><b>{view.side}</b><p>{view.thesis}</p><small>{view.caution}</small></div>)}</div></section><section className="dossier-section"><h3>Найденные материалы</h3><div className="source-table">{(data.sources || []).map((source) => <a href={source.sourceUrl} target="_blank" rel="noreferrer" key={source.id}><div><b>{source.title}</b><p>{source.summary}</p><small>{source.kind} • {source.sourceName}</small></div><ExternalLink size={18} /></a>)}</div></section></article></section>;
+function Breadcrumbs({ title, go }) {
+  return <div className="breadcrumbs"><button onClick={() => go('home')}>Главная</button><span>→</span><button onClick={() => go('explore')}>Поиск</button><span>→</span><b>{title}</b></div>;
 }
 
-function Dossier({ record, onClose }) {
+function StatusPage({ title, text, go }) {
+  return <section className="page dossier-page"><div className="dossier glass"><h2>{title}</h2><p>{text}</p><button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button></div></section>;
+}
+
+function UniversalDossier({ data, go }) {
+  const view = useMemo(() => ({
+    title: data.title,
+    eyebrow: 'универсальное досье',
+    icon: Sparkles,
+    meta: `${data.entityType} • ${data.status === 'needs-live-research' ? 'источники временно недоступны' : 'данные из внешних источников'}`,
+    summary: data.brief || data.summary,
+    info: data.infobox || {
+      type: data.entityType,
+      dates: 'уточняются',
+      region: 'уточняется',
+      participants: 'уточняются',
+      outcome: 'требуется исследование',
+      confidence: data.status === 'needs-live-research' ? 'низкая' : 'средняя',
+    },
+    timeline: data.timeline || [],
+    perspectives: data.perspectives || [],
+    knownFacts: data.knownFacts || [],
+    disputedClaims: data.disputedClaims || [],
+    positionStatements: data.positionStatements || [],
+    myths: data.myths || [],
+    sources: (data.sources || []).map((source) => ({ ...source, url: source.sourceUrl, type: source.kind, stance: source.sourceName, note: source.summary, reliability: 'требует оценки' })),
+    researchPipeline: data.researchPipeline || [],
+  }), [data]);
+
+  return <DossierLayout view={view} go={go} />;
+}
+
+function LocalDossier({ record, go }) {
+  const factChecks = record.factCheck || [];
+  const knownFacts = factChecks.filter((fact) => fact.assessment.toLowerCase().includes('высок'));
+  const myths = factChecks.filter((fact) => /миф|упрощение/.test(fact.assessment.toLowerCase()));
+  const disputedClaims = factChecks.filter((fact) => !knownFacts.includes(fact) && !myths.includes(fact));
+  const summary = record.sourcePack?.summary || record.impact || record.core || record.summary;
+  const view = {
+    title: record.title,
+    eyebrow: 'проверка и источники',
+    icon: Shield,
+    meta: `${record.years || record.period || record.timeline || 'даты уточняются'} • ${record.region || record.kind}`,
+    summary,
+    info: {
+      type: record.type || record.kind,
+      dates: record.years || record.period || record.timeline || 'уточняются',
+      region: record.region || record.regions?.join(', ') || 'уточняется',
+      participants: record.parties?.join(', ') || 'не указаны',
+      outcome: record.impact || record.core || 'требуется дополнительное исследование',
+      confidence: record.sourcePack?.sources?.length ? 'средне-высокая' : 'предварительная',
+    },
+    timeline: record.keyMoments || [],
+    perspectives: record.perspectives || [],
+    knownFacts,
+    disputedClaims,
+    myths,
+    positionStatements: (record.perspectives || []).map((viewpoint) => ({ claim: viewpoint.thesis, assessment: 'позиция стороны', explanation: viewpoint.side })),
+    sources: record.sourcePack?.sources || [],
+    researchPipeline: record.learn || [],
+  };
+
+  return <DossierLayout view={view} go={go} />;
+}
+
+function DossierLayout({ view, go }) {
+  const [activeTab, setActiveTab] = useState('overview');
+  const Icon = view.icon;
+
   return (
-    <article className="dossier glass">
-      <div className="dossier-head">
-        <div>
-          <span className="eyebrow"><Shield size={16} /> проверка и источники</span>
-          <h2>{record.title}</h2>
-          <p>{record.years || record.period || record.timeline} • {record.region || record.kind}</p>
+    <section className="page dossier-page">
+      <Breadcrumbs title={view.title} go={go} />
+      <article className="dossier glass">
+        <div className="dossier-head">
+          <div><span className="eyebrow"><Icon size={16} /> {view.eyebrow}</span><h2>{view.title}</h2><p>{view.meta}</p></div>
+          <button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button>
         </div>
-        {onClose && <button className="close-dossier" onClick={onClose}>Назад к поиску</button>}
-      </div>
 
-      {record.sourcePack?.summary && <p className="dossier-summary">{record.sourcePack.summary}</p>}
+        <nav className="dossier-tabs" aria-label="Разделы досье">
+          {tabs.map(({ id, label, icon: TabIcon }) => <button key={id} className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}><TabIcon size={17} />{label}</button>)}
+        </nav>
 
-      {record.keyMoments?.length > 0 && (
-        <section className="dossier-section">
-          <h3>Ключевые моменты</h3>
-          <div className="moment-grid">
-            {record.keyMoments.map((moment) => (
-              <div className="moment" key={`${moment.date}-${moment.title}`}>
-                <span>{moment.date}</span>
-                <b>{moment.title}</b>
-                <p>{moment.text}</p>
-                <em>{moment.status}</em>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {record.perspectives?.length > 0 && (
-        <section className="dossier-section">
-          <h3>Стороны взгляда</h3>
-          <div className="perspective-grid">
-            {record.perspectives.map((view) => (
-              <div className="perspective" key={view.side}>
-                <b>{view.side}</b>
-                <p>{view.thesis}</p>
-                <small>{view.caution}</small>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {record.factCheck?.length > 0 && (
-        <section className="dossier-section">
-          <h3>Проверка утверждений</h3>
-          <div className="fact-list">
-            {record.factCheck.map((fact) => (
-              <div className="fact-row" key={fact.claim}>
-                <div>
-                  <b>{fact.claim}</b>
-                  <p>{fact.explanation}</p>
-                </div>
-                <span>{fact.assessment}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {record.sourcePack?.sources?.length > 0 && (
-        <section className="dossier-section">
-          <h3>Источники и достоверность</h3>
-          <div className="source-table">
-            {record.sourcePack.sources.map((source) => (
-              <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>
-                <div>
-                  <b>{source.title}</b>
-                  <p>{source.note}</p>
-                  <small>{source.type} • {source.stance}</small>
-                </div>
-                <span className={`reliability ${source.reliability.includes('высок') ? 'high' : 'medium'}`}>{source.reliability}</span>
-                <ExternalLink size={18} />
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
-    </article>
+        {activeTab === 'overview' && <OverviewTab view={view} />}
+        {activeTab === 'timeline' && <TimelineTab timeline={view.timeline} />}
+        {activeTab === 'perspectives' && <PerspectivesTab perspectives={view.perspectives} />}
+        {activeTab === 'claims' && <ClaimsTab view={view} />}
+        {activeTab === 'sources' && <SourcesTab sources={view.sources} />}
+      </article>
+    </section>
   );
 }
 
+function OverviewTab({ view }) {
+  const info = [
+    ['Тип', view.info.type], ['Даты', view.info.dates], ['Регион', view.info.region],
+    ['Участники', view.info.participants], ['Итог / значение', view.info.outcome], ['Уверенность', view.info.confidence],
+  ];
+  return <div className="dossier-tab-panel"><section className="dossier-infobox">{info.map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</section><section className="dossier-section"><h3>Кратко</h3><p className="dossier-summary">{view.summary}</p></section><EvidencePreview view={view} />{view.researchPipeline.length > 0 && <section className="dossier-section"><h3>Что изучить дальше</h3><ol>{view.researchPipeline.map((step) => <li key={step}>{step}</li>)}</ol></section>}</div>;
+}
+
+function EvidencePreview({ view }) {
+  return <section className="dossier-section"><h3>Статус информации</h3><div className="evidence-grid"><EvidenceCard tone="known" title="Что известно точно" items={view.knownFacts} empty="Подтверждённые утверждения будут добавлены после сопоставления источников." /><EvidenceCard tone="disputed" title="Что спорно" items={view.disputedClaims} empty="Спорные утверждения пока не выделены." /><EvidenceCard tone="position" title="Позиции сторон" items={view.positionStatements} empty="Позиции сторон пока не определены." /></div></section>;
+}
+
+function EvidenceCard({ title, items, empty, tone }) {
+  return <div className={`evidence-card ${tone}`}><h4>{title}</h4>{items.length ? <ul>{items.slice(0, 3).map((item, index) => <li key={item.claim || item.text || index}>{item.claim || item.text || item}</li>)}</ul> : <p>{empty}</p>}</div>;
+}
+
+function TimelineTab({ timeline }) {
+  return <div className="dossier-tab-panel"><section className="dossier-section tab-section"><h3>Хронология</h3>{timeline.length ? <div className="moment-grid">{timeline.map((moment) => <div className="moment" key={`${moment.date}-${moment.title}`}><span>{moment.date}</span><b>{moment.title}</b><p>{moment.text}</p><em>{moment.status}</em></div>)}</div> : <EmptyTab text="Для этой темы хронология ещё не собрана. Даты нельзя добавлять без проверки источников." />}</section></div>;
+}
+
+function PerspectivesTab({ perspectives }) {
+  return <div className="dossier-tab-panel"><section className="dossier-section tab-section"><h3>Стороны и точки зрения</h3>{perspectives.length ? <div className="perspective-grid">{perspectives.map((view) => <div className="perspective" key={`${view.side}-${view.thesis}`}><b>{view.side}</b><p>{view.thesis}</p><small>{view.caution}</small></div>)}</div> : <EmptyTab text="Недостаточно данных, чтобы корректно выделить независимые позиции." />}</section></div>;
+}
+
+function ClaimsTab({ view }) {
+  const groups = [['Что известно точно', view.knownFacts, 'known'], ['Что спорно', view.disputedClaims, 'disputed'], ['Позиция стороны', view.positionStatements, 'position'], ['Мифы и упрощения', view.myths, 'myth']];
+  return <div className="dossier-tab-panel"><section className="dossier-section tab-section"><h3>Проверка утверждений</h3><div className="claim-groups">{groups.map(([title, items, tone]) => <div className="claim-group" key={title}><h4 className={tone}>{title}</h4>{items.length ? <div className="fact-list">{items.map((fact, index) => <div className="fact-row" key={fact.claim || fact.text || index}><div><b>{fact.claim || fact.text || fact}</b>{fact.explanation && <p>{fact.explanation}</p>}</div><span>{fact.assessment || title.toLowerCase()}</span></div>)}</div> : <p className="empty-inline">Нет классифицированных утверждений.</p>}</div>)}</div></section></div>;
+}
+
+function SourcesTab({ sources }) {
+  return <div className="dossier-tab-panel"><section className="dossier-section tab-section"><h3>Источники и достоверность</h3>{sources.length ? <div className="source-table">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.id || source.url}><div><b>{source.title}</b><p>{source.note}</p><small>{source.type} • {source.stance}</small></div><span className={`reliability ${source.reliability?.includes('высок') ? 'high' : 'medium'}`}>{source.reliability || 'требует оценки'}</span><ExternalLink size={18} /></a>)}</div> : <EmptyTab text="Внешние материалы пока недоступны. Исследовательский план сохранён, источники можно загрузить позже." />}</section></div>;
+}
+
+function EmptyTab({ text }) {
+  return <div className="dossier-empty"><Shield size={22} /><p>{text}</p></div>;
+}
