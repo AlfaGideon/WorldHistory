@@ -23,34 +23,64 @@ export default function DossierPage({ dossierId, go }) {
   const record = allRecords.find((item) => item.id === dossierId || normalizeText(item.title) === normalizeText(dossierId));
   const [data, setData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [liveMode, setLiveMode] = useState(false);
 
   useEffect(() => {
     let active = true;
-    if (!record) {
+    if (!record || liveMode) {
       getDossier(dossierId)
         .then((value) => active && setData(value))
-        // A dossier must remain available when a static deployment cannot
-        // reach its optional API. The fallback makes no factual claims.
-        .catch(() => active && setData(createDossierFallback(dossierId)));
+        .catch(() => {
+          if (active && (!record || liveMode)) setData(createDossierFallback(dossierId));
+        });
     }
     return () => { active = false; };
-  }, [dossierId, record]);
+  }, [dossierId, record, liveMode]);
 
-  if (record) return <LocalDossier record={record} go={go} />;
-  if (!data) return <section className="page dossier-page"><div className="dossier glass loading-state">Строим исследовательский план…</div></section>;
+  if (record && !liveMode) {
+    const handleRefresh = async () => {
+      setRefreshing(true);
+      setLiveMode(true);
+      try {
+        const fresh = await getDossier(dossierId, { refresh: true });
+        setData(fresh);
+      } catch {
+      } finally {
+        setRefreshing(false);
+      }
+    };
+    return <LocalDossier record={record} go={go} onRefresh={handleRefresh} refreshing={refreshing} />;
+  }
+
+  if (record && liveMode && (!data || data.status === 'local-research-plan')) {
+    const handleRefresh = async () => {
+      setRefreshing(true);
+      try {
+        const fresh = await getDossier(dossierId, { refresh: true });
+        setData(fresh);
+      } catch {
+      } finally {
+        setRefreshing(false);
+      }
+    };
+    return <LocalDossier record={record} go={go} onRefresh={handleRefresh} refreshing={refreshing} />;
+  }
+
+  if (!data && !(record && !liveMode)) {
+    return <section className="page dossier-page"><div className="dossier glass loading-state">Строим исследовательский план…</div></section>;
+  }
 
   const refresh = async () => {
     setRefreshing(true);
     try {
       setData(await getDossier(dossierId, { refresh: true }));
     } catch {
-      // Keep the saved copy when a manual refresh cannot reach the API.
     } finally {
       setRefreshing(false);
     }
   };
 
-  return <UniversalDossier data={data} go={go} onRefresh={refresh} refreshing={refreshing} />;
+  return <UniversalDossier data={data || createDossierFallback(dossierId)} go={go} onRefresh={refresh} refreshing={refreshing} />;
 }
 
 function Breadcrumbs({ title, go }) {
@@ -101,7 +131,7 @@ function UniversalDossier({ data, go, onRefresh, refreshing }) {
   return <DossierLayout view={view} go={go} onRefresh={fromCache || savedAt ? onRefresh : null} refreshing={refreshing} />;
 }
 
-function LocalDossier({ record, go }) {
+function LocalDossier({ record, go, onRefresh, refreshing }) {
   const factChecks = record.factCheck || [];
   const knownFacts = factChecks.filter((fact) => fact.assessment.toLowerCase().includes('высок'));
   const myths = factChecks.filter((fact) => /миф|упрощение/.test(fact.assessment.toLowerCase()));
@@ -131,7 +161,7 @@ function LocalDossier({ record, go }) {
     researchPipeline: record.learn || [],
   };
 
-  return <DossierLayout view={view} go={go} />;
+  return <DossierLayout view={view} go={go} onRefresh={onRefresh} refreshing={refreshing} />;
 }
 
 function DossierLayout({ view, go, onRefresh, refreshing }) {
