@@ -1,7 +1,10 @@
+// Dossiers are expensive to rebuild (multi-provider research), so they are
+// kept for a year unless the user explicitly refreshes. Search results stay
+// valid for a week; parsed source pages for a month.
 const DEFAULT_TTL = {
-  search: 15 * 60 * 1000,
-  dossier: 24 * 60 * 60 * 1000,
-  source: 7 * 24 * 60 * 60 * 1000,
+  search: 7 * 24 * 60 * 60 * 1000,
+  dossier: 365 * 24 * 60 * 60 * 1000,
+  source: 30 * 24 * 60 * 60 * 1000,
 };
 
 const normalizeKey = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');

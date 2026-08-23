@@ -8,7 +8,8 @@ const request = async (path, options = {}) => {
 export const searchHistory = (query, type = 'all') =>
   request(`/api/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(type)}`);
 
-export const getDossier = (query) => request(`/api/dossier/${encodeURIComponent(query)}`);
+export const getDossier = (query, { refresh = false } = {}) =>
+  request(`/api/dossier/${encodeURIComponent(query)}${refresh ? '?refresh=1' : ''}`);
 
 /**
  * Keeps the dossier useful when the optional API is not running (for example,

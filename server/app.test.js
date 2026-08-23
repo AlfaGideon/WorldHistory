@@ -50,6 +50,44 @@ test('dossier is still returned when every provider is unavailable', async () =>
   assert.ok(body.researchPipeline.length > 0);
 });
 
+test('dossier is cached, reports savedAt and refresh re-downloads it', async () => {
+  let builds = 0;
+  let stored = null;
+  const normalize = (value) => String(value || '').trim().toLowerCase();
+  const cache = {
+    getSearch: () => null,
+    setSearch: () => {},
+    getDossier: (query) => (normalize(query) === 'франция' && stored ? { data: stored, stale: false, createdAt: 1_000 } : null),
+    setDossier: (query, data) => { stored = data; },
+    getSource: () => null,
+  };
+  const app = createApp({
+    cache,
+    search: async () => [sampleResult],
+    dossierBuilder: async (query, results) => { builds += 1; return { query, title: results[0].title, status: 'live-multi-source', sources: results }; },
+  });
+  const server = await new Promise((resolve) => {
+    const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+  });
+  const url = `http://127.0.0.1:${server.address().port}/api/dossier/${encodeURIComponent('Франция')}`;
+  try {
+    const first = await (await fetch(url)).json();
+    assert.equal(first.cacheStatus, 'miss');
+    assert.ok(first.cachedAt > 0, 'fresh dossier must carry a saved timestamp');
+
+    const second = await (await fetch(url)).json();
+    assert.equal(second.cacheStatus, 'hit');
+    assert.equal(second.cachedAt, 1_000);
+    assert.equal(builds, 1, 'second call must reuse the saved dossier');
+
+    const refreshed = await (await fetch(`${url}?refresh=1`)).json();
+    assert.equal(refreshed.cacheStatus, 'miss');
+    assert.equal(builds, 2, 'refresh=1 must rebuild and overwrite the saved copy');
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
 test('source analyzer validates URL', async () => {
   const response = await fetch(`${baseUrl}/api/source/analyze?url=not-a-url`);
   assert.equal(response.status, 400);

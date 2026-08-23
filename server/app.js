@@ -19,7 +19,7 @@ async function safeSearch(search, query, label) {
     return await search(query);
   } catch (error) {
     console.error(`${label}:`, error.message);
-    return { results: [], errors: [{ source: label, message: error.message }] };
+    return { results: [], errors: [{ source: label, message: error.message }], providerStatus: [] };
   }
 }
 
@@ -31,6 +31,7 @@ export function createApp({
   network = null,
   networkTester = null,
   torDetector = detectTorProxy,
+  dossierBuilder = null,
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -40,8 +41,10 @@ export function createApp({
   const activeNetwork = network || createNetworkManager({ settingsStore });
   const http = createHttpClient(activeNetwork);
   const runSearch = search
-    ? async (query) => ({ results: await search(query), errors: [] })
+    ? async (query) => ({ results: await search(query), errors: [], providerStatus: [] })
     : (query) => liveSearchDetailed(query, { fetchJson: http.fetchJson });
+  const runDossierBuilder = dossierBuilder
+    || ((query, results) => buildDossier(query, results, { fetchJson: http.fetchJson }));
   const runSourceAnalyzer = sourceAnalyzer || ((url) => analyzeSource(url, {
     rawFetch: http.rawFetch,
     remoteDns: activeNetwork.describe().remoteDns,
@@ -64,7 +67,7 @@ export function createApp({
     const cached = cache?.getSearch(query, type);
     if (cached && !cached.stale) return res.json({ ...cached.data, mode: 'cache', cacheStatus: 'hit', network: activeNetwork.describe() });
 
-    const { results: liveResults, errors } = await safeSearch(runSearch, query, 'Live search failed');
+    const { results: liveResults, errors, providerStatus } = await safeSearch(runSearch, query, 'Live search failed');
     if (liveResults.length) {
       const payload = {
         query,
@@ -73,6 +76,7 @@ export function createApp({
         results: liveResults,
         sources: [...new Set(liveResults.map((item) => item.sourceName))],
         providerErrors: errors.length ? errors : undefined,
+        providerStatus: providerStatus || [],
         network: activeNetwork.describe(),
       };
       cache?.setSearch(query, type, payload);
@@ -87,6 +91,7 @@ export function createApp({
       results: [],
       sources: [],
       providerErrors: errors,
+      providerStatus: providerStatus || [],
       hint: OFFLINE_HINT,
       network: activeNetwork.describe(),
       cacheStatus: 'miss',
@@ -97,15 +102,28 @@ export function createApp({
     const query = String(req.params.query || '').trim();
     if (!query) return res.status(400).json({ error: 'Тема досье не указана' });
 
-    const cached = cache?.getDossier(query);
-    if (cached && !cached.stale) return res.json({ ...cached.data, cacheStatus: 'hit', network: activeNetwork.describe() });
+    // ?refresh=1 skips the saved copy: the user explicitly asked to re-download.
+    const refresh = ['1', 'true', 'yes'].includes(String(req.query.refresh || '').toLowerCase());
+    const cached = refresh ? null : cache?.getDossier(query);
+    if (cached && !cached.stale) {
+      return res.json({ ...cached.data, cacheStatus: 'hit', cachedAt: cached.createdAt, network: activeNetwork.describe() });
+    }
 
-    const { results, errors } = await safeSearch(runSearch, query, 'Dossier search failed');
-    if (!results.length && cached) return res.json({ ...cached.data, cacheStatus: 'stale', hint: OFFLINE_HINT, network: activeNetwork.describe() });
+    const { results, errors, providerStatus } = await safeSearch(runSearch, query, 'Dossier search failed');
+    if (!results.length && cached) {
+      return res.json({ ...cached.data, cacheStatus: 'stale', cachedAt: cached.createdAt, hint: OFFLINE_HINT, network: activeNetwork.describe() });
+    }
 
-    const dossier = buildDossier(query, results);
+    const dossier = await runDossierBuilder(query, results);
     if (results.length) cache?.setDossier(query, dossier);
-    return res.json({ ...dossier, cacheStatus: 'miss', providerErrors: errors.length ? errors : undefined, network: activeNetwork.describe() });
+    return res.json({
+      ...dossier,
+      cacheStatus: 'miss',
+      cachedAt: Date.now(),
+      providerErrors: errors.length ? errors : undefined,
+      providerStatus: providerStatus || [],
+      network: activeNetwork.describe(),
+    });
   });
 
   app.get('/api/source/analyze', async (req, res) => {
