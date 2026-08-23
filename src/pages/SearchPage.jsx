@@ -3,6 +3,7 @@ import { Filter, Search, Shield, Sparkles } from 'lucide-react';
 import { searchHistory } from '../api/client';
 import { glossary } from '../historyData';
 import PageTitle from '../components/PageTitle';
+import { SourceBadge, SourceBadgeLink } from '../components/SourceBadge';
 
 export default function SearchPage({ go }) {
   const [query, setQuery] = useState('война');
@@ -37,11 +38,13 @@ export default function SearchPage({ go }) {
   }, [query, type]);
 
   const displayResults = results;
+  const providerStatus = meta?.providerStatus || [];
   return (
     <section className="page">
       <PageTitle icon={Search} eyebrow="исследователь" title="Глобальный поиск по истории" text="Введите страну, эпоху, событие, регион или понятие. Поиск обращается к backend API и умеет открыть универсальное досье даже для темы вне локальной базы." />
       <div className="search-console glass">
         <div className="search-input"><Search size={22} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Например: Франция, Китай, Османская империя, Косово, Чечня" /></div>
+        <button className="primary universal-button" onClick={() => go(`/dossier/${encodeURIComponent(query)}`)} disabled={!query.trim()}><Sparkles size={18} /> Построить досье по «{query || 'теме'}»</button>
         <div className="filters"><Filter size={18} />{['Все', 'Эпоха', 'Страна', 'Конфликт'].map((item) => <button key={item} className={type === item ? 'active' : ''} onClick={() => setType(item)}>{item}</button>)}</div>
       </div>
       <div className="truth-note glass"><Shield size={22} /><div><b>Live-исследователь</b><p>Сначала показываем найденные сущности, затем backend строит план исследования с фактами, источниками, позициями сторон и оговорками о достоверности.</p></div></div>
@@ -51,6 +54,17 @@ export default function SearchPage({ go }) {
           <button onClick={() => go('settings')}>Открыть настройки подключения</button>
         </div>
       )}
+      {providerStatus.length > 0 && (
+        <div className="provider-status">
+          {providerStatus.map((provider) => (
+            <span key={provider.id} className={`provider-chip ${provider.ok ? 'ok' : 'fail'}`} title={provider.ok ? `${provider.label}: найдено ${provider.count}` : `${provider.label}: ${provider.error || 'недоступен'}`}>
+              <SourceBadge name={provider.label} size={16} />
+              <b>{provider.label}</b>
+              <em>{provider.ok ? `${provider.count}` : 'недоступен'}</em>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="quick-tags">{glossary.map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}{['Франция', 'Китай', 'Россия', 'Османская империя', 'Косово'].map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}</div>
       <div className="results-meta">
         {status === 'loading' ? 'Обновляем результаты…' : 'Найдено: '}<b>{displayResults.length}</b>
@@ -58,7 +72,6 @@ export default function SearchPage({ go }) {
       </div>
       <div className="result-grid">{displayResults.map((record) => <ResultCard key={`${record.kind}-${record.id}`} record={{ ...record, title: record.title || record.name, period: record.dates }} onOpenDossier={(item) => go(`/dossier/${encodeURIComponent(item.title || item.id)}`)} />)}</div>
       {!displayResults.length && status !== 'loading' && <div className="empty-state glass">Ничего не найдено. Откройте досье по этому запросу — система попробует сформировать универсальный план исследования.</div>}
-      <button className="primary universal-button" onClick={() => go(`/dossier/${encodeURIComponent(query)}`)} disabled={!query.trim()}><Sparkles size={18} /> Построить досье по «{query || 'теме'}»</button>
     </section>
   );
 }
@@ -70,7 +83,10 @@ function ResultCard({ record, onOpenDossier }) {
   const hasDossier = record.sourcePack || record.perspectives || record.keyMoments;
   return (
     <article className="result-card glass">
-      <span className="pill">{record.kind}</span>
+      <div className="result-card-top">
+        <span className="pill">{record.kind}</span>
+        <SourceBadgeLink record={record} />
+      </div>
       <h3>{record.flag ? `${record.flag} ` : ''}{record.title}</h3>
       <b>{subtitle}</b>
       <p>{body}</p>
@@ -84,8 +100,6 @@ function ResultCard({ record, onOpenDossier }) {
         </div>
       )}
       {hasDossier && <button className="dossier-button" onClick={() => onOpenDossier(record)}>Открыть разбор источников</button>}
-      {record.sourceUrl && <a className="dossier-button source-link" href={record.sourceUrl} target="_blank" rel="noreferrer">Открыть источник: {record.sourceName || 'внешний источник'}</a>}
     </article>
   );
 }
-

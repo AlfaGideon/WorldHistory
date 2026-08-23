@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Clock3, ExternalLink, Eye, Info, Scale, Shield, Sparkles } from 'lucide-react';
+import { BookOpen, Clock3, Database, Eye, Info, RefreshCw, Scale, Shield, Sparkles } from 'lucide-react';
 import { createDossierFallback, getDossier } from '../api/client';
 import { allRecords, normalizeText } from '../utils/historyRecords';
+import { SourceBadgeLink } from '../components/SourceBadge';
 
 const tabs = [
   { id: 'overview', label: 'Обзор', icon: Info },
@@ -11,9 +12,17 @@ const tabs = [
   { id: 'sources', label: 'Источники', icon: BookOpen },
 ];
 
+const formatDate = (ms) => {
+  if (!ms) return null;
+  const date = new Date(Number(ms));
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
 export default function DossierPage({ dossierId, go }) {
   const record = allRecords.find((item) => item.id === dossierId || normalizeText(item.title) === normalizeText(dossierId));
   const [data, setData] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -29,14 +38,28 @@ export default function DossierPage({ dossierId, go }) {
 
   if (record) return <LocalDossier record={record} go={go} />;
   if (!data) return <section className="page dossier-page"><div className="dossier glass loading-state">Строим исследовательский план…</div></section>;
-  return <UniversalDossier data={data} go={go} />;
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      setData(await getDossier(dossierId, { refresh: true }));
+    } catch {
+      // Keep the saved copy when a manual refresh cannot reach the API.
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return <UniversalDossier data={data} go={go} onRefresh={refresh} refreshing={refreshing} />;
 }
 
 function Breadcrumbs({ title, go }) {
   return <div className="breadcrumbs"><button onClick={() => go('home')}>Главная</button><span>→</span><button onClick={() => go('explore')}>Поиск</button><span>→</span><b>{title}</b></div>;
 }
 
-function UniversalDossier({ data, go }) {
+function UniversalDossier({ data, go, onRefresh, refreshing }) {
+  const savedAt = formatDate(data.cachedAt || data.fetchedAt);
+  const fromCache = data.cacheStatus === 'hit' || data.cacheStatus === 'stale';
   const view = useMemo(() => ({
     title: data.title,
     eyebrow: 'универсальное досье',
@@ -51,20 +74,31 @@ function UniversalDossier({ data, go }) {
       outcome: 'требуется исследование',
       confidence: data.status === 'needs-live-research' ? 'низкая' : 'средняя',
     },
+    quickFacts: data.quickFacts || [],
     timeline: data.timeline || [],
     perspectives: data.perspectives || [],
     knownFacts: data.knownFacts || [],
     disputedClaims: data.disputedClaims || [],
     positionStatements: data.positionStatements || [],
     myths: data.myths || [],
-    sources: (data.sources || []).map((source) => ({ ...source, url: source.sourceUrl, type: source.kind, stance: source.sourceName, note: source.summary, reliability: 'требует оценки' })),
+    sources: (data.sources || []).map((source) => ({
+      ...source,
+      url: source.sourceUrl || source.url,
+      type: source.kind || source.type,
+      stance: source.sourceName || source.stance,
+      note: source.summary || source.note,
+      reliability: source.reliability || 'требует оценки',
+    })),
     researchPipeline: data.researchPipeline || [],
+    thumbnail: data.thumbnail || null,
+    savedAt,
+    fromCache,
     notice: ['local-research-plan', 'needs-live-research'].includes(data.status)
       ? 'Досье построено без внешних данных: сейчас backend не может получить материалы. Подключите маршрут (напрямую, Tor Browser или прокси) в настройках и обновите страницу.'
       : null,
-  }), [data]);
+  }), [data, savedAt, fromCache]);
 
-  return <DossierLayout view={view} go={go} />;
+  return <DossierLayout view={view} go={go} onRefresh={fromCache || savedAt ? onRefresh : null} refreshing={refreshing} />;
 }
 
 function LocalDossier({ record, go }) {
@@ -100,7 +134,7 @@ function LocalDossier({ record, go }) {
   return <DossierLayout view={view} go={go} />;
 }
 
-function DossierLayout({ view, go }) {
+function DossierLayout({ view, go, onRefresh, refreshing }) {
   const [activeTab, setActiveTab] = useState('overview');
   const Icon = view.icon;
 
@@ -109,9 +143,26 @@ function DossierLayout({ view, go }) {
       <Breadcrumbs title={view.title} go={go} />
       <article className="dossier glass">
         <div className="dossier-head">
-          <div><span className="eyebrow"><Icon size={16} /> {view.eyebrow}</span><h2>{view.title}</h2><p>{view.meta}</p></div>
+          <div className="dossier-head-copy">
+            <span className="eyebrow"><Icon size={16} /> {view.eyebrow}</span>
+            <h2>{view.title}</h2>
+            <p>{view.meta}</p>
+          </div>
+          {view.thumbnail && <img className="dossier-thumb" src={view.thumbnail} alt={view.title} loading="lazy" />}
           <button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button>
         </div>
+
+        {(view.savedAt || onRefresh) && (
+          <div className="saved-row">
+            <Database size={15} />
+            <span>
+              {view.savedAt
+                ? `Данные сохранены ${view.savedAt}${view.fromCache ? ' • читаем из локального кэша, сеть не расходуется' : ''}`
+                : 'Данные можно сохранить локально — они не будут загружаться повторно.'}
+            </span>
+            {onRefresh && <button onClick={onRefresh} disabled={refreshing}><RefreshCw size={14} className={refreshing ? 'spin' : ''} />{refreshing ? 'Обновляем…' : 'Обновить данные'}</button>}
+          </div>
+        )}
 
         {view.notice && (
           <div className="api-notice with-action dossier-notice">
@@ -138,8 +189,9 @@ function OverviewTab({ view }) {
   const info = [
     ['Тип', view.info.type], ['Даты', view.info.dates], ['Регион', view.info.region],
     ['Участники', view.info.participants], ['Итог / значение', view.info.outcome], ['Уверенность', view.info.confidence],
+    ...(view.info.partOf ? [['Часть чего', view.info.partOf]] : []),
   ];
-  return <div className="dossier-tab-panel"><section className="dossier-infobox">{info.map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</section><section className="dossier-section"><h3>Кратко</h3><p className="dossier-summary">{view.summary}</p></section><EvidencePreview view={view} />{view.researchPipeline.length > 0 && <section className="dossier-section"><h3>Что изучить дальше</h3><ol>{view.researchPipeline.map((step) => <li key={step}>{step}</li>)}</ol></section>}</div>;
+  return <div className="dossier-tab-panel"><section className="dossier-infobox">{info.map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</section><section className="dossier-section"><h3>Кратко</h3><p className="dossier-summary">{view.summary}</p></section>{view.quickFacts?.length > 0 && <section className="dossier-section"><h3>Быстрые факты</h3><div className="chips">{view.quickFacts.map((fact) => <em key={fact.label} title={fact.value}>{fact.label}: {fact.value}</em>)}</div></section>}<EvidencePreview view={view} />{view.researchPipeline.length > 0 && <section className="dossier-section"><h3>Что изучить дальше</h3><ol>{view.researchPipeline.map((step) => <li key={step}>{step}</li>)}</ol></section>}</div>;
 }
 
 function EvidencePreview({ view }) {
@@ -164,7 +216,7 @@ function ClaimsTab({ view }) {
 }
 
 function SourcesTab({ sources }) {
-  return <div className="dossier-tab-panel"><section className="dossier-section tab-section"><h3>Источники и достоверность</h3>{sources.length ? <div className="source-table">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.id || source.url}><div><b>{source.title}</b><p>{source.note}</p><small>{source.type} • {source.stance}</small></div><span className={`reliability ${source.reliability?.includes('высок') ? 'high' : 'medium'}`}>{source.reliability || 'требует оценки'}</span><ExternalLink size={18} /></a>)}</div> : <EmptyTab text="Внешние материалы пока недоступны. Исследовательский план сохранён, источники можно загрузить позже." />}</section></div>;
+  return <div className="dossier-tab-panel"><section className="dossier-section tab-section"><h3>Источники и достоверность</h3>{sources.length ? <div className="source-table">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.id || source.url}><SourceBadgeLink record={{ sourceUrl: source.url, sourceName: source.stance || source.sourceName }} size={26} /><div className="source-copy"><b>{source.title}</b><p>{source.note}</p><small>{source.type} • {source.stance}</small></div><span className={`reliability ${source.reliability?.includes('высок') ? 'high' : 'medium'}`}>{source.reliability || 'требует оценки'}</span></a>)}</div> : <EmptyTab text="Внешние материалы пока недоступны. Исследовательский план сохранён, источники можно загрузить позже." />}</section></div>;
 }
 
 function EmptyTab({ text }) {
