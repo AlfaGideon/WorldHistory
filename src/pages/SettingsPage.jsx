@@ -101,7 +101,7 @@ export default function SettingsPage() {
     return (
       <section className="page">
         <PageTitle icon={SettingsIcon} eyebrow="параметры приложения" title="Настройки подключения" text="Управление тем, как поиск обращается к внешним источникам." />
-        <div className="api-notice">{loadError}. Убедитесь, что запущен backend (npm run dev), и обновите страницу.</div>
+        <div className="api-notice">{loadError}. Запустите приложение командой npm run dev или батником start-worldhistory.bat (он поднимает и backend, и frontend) и обновите страницу.</div>
       </section>
     );
   }
