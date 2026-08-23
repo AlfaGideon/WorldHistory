@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Archive,
   BookOpen,
   Compass,
   ExternalLink,
-  Filter,
   Flag,
   Globe2,
   Landmark,
@@ -19,9 +18,12 @@ import {
   Timeline,
   X,
 } from 'lucide-react';
-import { conflicts, countries, eras, glossary, sourceGroups, studyPaths } from './historyData';
+import { conflicts, countries, eras, sourceGroups, studyPaths } from './historyData';
 import './styles.css';
-import { analyzeSource, getDossier, searchHistory } from './api/client';
+import { analyzeSource } from './api/client';
+import DossierPage from './pages/DossierPage';
+import SearchPage from './pages/SearchPage';
+import PageTitle from './components/PageTitle';
 
 const nav = [
   { id: 'home', label: 'Главная', icon: Compass, path: '/' },
@@ -41,64 +43,6 @@ function parseRoute(pathname = '/') {
     return { page: 'dossier', dossierId: decodeURIComponent(normalized.replace('/dossier/', '')) };
   }
   return { page: pageByPath[normalized] || 'home', dossierId: null };
-}
-
-const normalizeText = (value) =>
-  String(value || '')
-    .toLowerCase()
-    .replaceAll('ё', 'е')
-    .replace(/[^а-яa-z0-9\s-]/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const searchSynonyms = {
-  чечня: ['чечня', 'чеченская', 'чеченские', 'ичкерия', 'грозный', 'северный кавказ'],
-  чеченская: ['чечня', 'чеченская', 'ичкерия', 'грозный'],
-  вов: ['великая отечественная', 'вторая мировая', 'world war ii'],
-  ссср: ['советский союз', 'ссср', 'ussr'],
-  россия: ['россия', 'русь', 'московское княжество', 'ссср'],
-};
-
-const expandQuery = (query) => {
-  const normalized = normalizeText(query);
-  const tokens = normalized.split(' ').filter(Boolean);
-  const expanded = new Set([normalized, ...tokens]);
-  tokens.forEach((token) => (searchSynonyms[token] || []).forEach((word) => expanded.add(normalizeText(word))));
-  if (searchSynonyms[normalized]) {
-    searchSynonyms[normalized].forEach((word) => expanded.add(normalizeText(word)));
-  }
-  return [...expanded].filter(Boolean);
-};
-
-const allRecords = [
-  ...eras.map((item) => ({
-    ...item,
-    kind: 'Эпоха',
-    text: `${item.title} ${item.period} ${item.summary} ${item.regions.join(' ')} ${item.milestones.join(' ')} ${item.aliases?.join(' ') || ''}`,
-  })),
-  ...countries.map((item) => ({
-    ...item,
-    title: item.name,
-    kind: 'Страна',
-    text: `${item.name} ${item.region} ${item.timeline} ${item.core} ${item.topics.join(' ')} ${item.sources.join(' ')} ${item.aliases?.join(' ') || ''}`,
-  })),
-  ...conflicts.map((item) => ({
-    ...item,
-    title: item.name,
-    kind: 'Конфликт',
-    text: `${item.name} ${item.years} ${item.region} ${item.parties.join(' ')} ${item.impact} ${item.learn.join(' ')} ${item.aliases?.join(' ') || ''} ${item.keyMoments?.map((m) => `${m.date} ${m.title} ${m.text}`).join(' ') || ''} ${item.perspectives?.map((p) => `${p.side} ${p.thesis}`).join(' ') || ''} ${item.sourcePack?.sources?.map((src) => `${src.title} ${src.type} ${src.note}`).join(' ') || ''}`,
-  })),
-].map((record) => ({ ...record, searchText: normalizeText(`${record.title} ${record.text}`) }));
-
-function useSearch(query, type) {
-  return useMemo(() => {
-    const terms = expandQuery(query);
-    return allRecords.filter((record) => {
-      const matchesType = type === 'Все' || record.kind === type;
-      const matchesQuery = terms.length === 0 || terms.some((term) => record.searchText.includes(term));
-      return matchesType && matchesQuery;
-    });
-  }, [query, type]);
 }
 
 function App() {
@@ -156,12 +100,12 @@ function App() {
           <button className="ghost" onClick={() => go('explore')}>Начать поиск</button>
         </header>
         {route.page === 'home' && <Home go={go} />}
-        {route.page === 'explore' && <Explore go={go} />}
+        {route.page === 'explore' && <SearchPage go={go} />}
         {route.page === 'eras' && <Eras />}
         {route.page === 'countries' && <Countries />}
         {route.page === 'conflicts' && <Conflicts go={go} />}
         {route.page === 'sources' && <Sources />}
-        {route.page === 'dossier' && <DossierPage dossierId={route.dossierId} go={go} />}
+        {route.page === 'dossier' && <DossierPage key={route.dossierId} dossierId={route.dossierId} go={go} />}
       </main>
     </div>
   );
@@ -213,45 +157,6 @@ function Home({ go }) {
         <Feature icon={Timeline} title="Периодизация" text="Быстро переходите от древних цивилизаций к современной глобализации." />
         <Feature icon={Library} title="Источники" text="Каталог энциклопедий, архивов, карт, музеев и академических инструментов." />
       </div>
-    </section>
-  );
-}
-
-function Explore({ go }) {
-  const [query, setQuery] = useState('война');
-  const [type, setType] = useState('Все');
-  const [results, setResults] = useState([]);
-  const [status, setStatus] = useState('loading');
-  const [error, setError] = useState('');
-  useEffect(() => {
-    let active = true;
-    const timer = setTimeout(async () => {
-      setStatus('loading'); setError('');
-      try {
-        const data = await searchHistory(query, type === 'Все' ? 'all' : type);
-        if (active) { setResults(data.results || []); setStatus('ready'); }
-      } catch (err) {
-        if (active) { setResults([]); setError('Не удалось получить данные из внешних источников. Попробуйте ещё раз.'); setStatus('error'); }
-      }
-    }, 350);
-    return () => { active = false; clearTimeout(timer); };
-  }, [query, type]);
-
-  const displayResults = results;
-  return (
-    <section className="page">
-      <PageTitle icon={Search} eyebrow="исследователь" title="Глобальный поиск по истории" text="Введите страну, эпоху, событие, регион или понятие. Поиск обращается к backend API и умеет открыть универсальное досье даже для темы вне локальной базы." />
-      <div className="search-console glass">
-        <div className="search-input"><Search size={22} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Например: Франция, Китай, Османская империя, Косово, Чечня" /></div>
-        <div className="filters"><Filter size={18} />{['Все', 'Эпоха', 'Страна', 'Конфликт'].map((item) => <button key={item} className={type === item ? 'active' : ''} onClick={() => setType(item)}>{item}</button>)}</div>
-      </div>
-      <div className="truth-note glass"><Shield size={22} /><div><b>Live-исследователь</b><p>Сначала показываем найденные сущности, затем backend строит план исследования с фактами, источниками, позициями сторон и оговорками о достоверности.</p></div></div>
-      {error && <div className="api-notice">{error}</div>}
-      <div className="quick-tags">{glossary.map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}{['Франция', 'Китай', 'Россия', 'Османская империя', 'Косово'].map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}</div>
-      <div className="results-meta">{status === 'loading' ? 'Обновляем результаты…' : 'Найдено: '}<b>{displayResults.length}</b></div>
-      <div className="result-grid">{displayResults.map((record) => <ResultCard key={`${record.kind}-${record.id}`} record={{ ...record, title: record.title || record.name, period: record.dates }} onOpenDossier={(item) => go(`/dossier/${encodeURIComponent(item.title || item.id)}`)} />)}</div>
-      {!displayResults.length && status !== 'loading' && <div className="empty-state glass">Ничего не найдено. Откройте досье по этому запросу — система попробует сформировать универсальный план исследования.</div>}
-      <button className="primary universal-button" onClick={() => go(`/dossier/${encodeURIComponent(query)}`)} disabled={!query.trim()}><Sparkles size={18} /> Построить досье по «{query || 'теме'}»</button>
     </section>
   );
 }
@@ -389,16 +294,6 @@ function Sources() {
   );
 }
 
-function PageTitle({ icon: Icon, eyebrow, title, text }) {
-  return (
-    <div className="page-title">
-      <span className="eyebrow"><Icon size={16} /> {eyebrow}</span>
-      <h1>{title}</h1>
-      <p>{text}</p>
-    </div>
-  );
-}
-
 function StudyPath({ path }) {
   return (
     <article className="path-card glass">
@@ -415,145 +310,6 @@ function Feature({ icon: Icon, title, text }) {
       <Icon size={24} />
       <h3>{title}</h3>
       <p>{text}</p>
-    </article>
-  );
-}
-
-function ResultCard({ record, onOpenDossier }) {
-  const subtitle = record.period || record.timeline || record.years;
-  const body = record.summary || record.core || record.impact;
-  const hasDossier = record.sourcePack || record.perspectives || record.keyMoments;
-  return (
-    <article className="result-card glass">
-      <span className="pill">{record.kind}</span>
-      <h3>{record.flag ? `${record.flag} ` : ''}{record.title}</h3>
-      <b>{subtitle}</b>
-      <p>{body}</p>
-      {'regions' in record && <div className="chips">{record.regions.map((r) => <em key={r}>{r}</em>)}</div>}
-      {'topics' in record && <div className="chips">{record.topics.slice(0, 4).map((r) => <em key={r}>{r}</em>)}</div>}
-      {'parties' in record && <div className="chips">{record.parties.map((r) => <em key={r}>{r}</em>)}</div>}
-      {record.sourcePack?.sources?.length > 0 && (
-        <div className="source-preview">
-          <b>Источники внутри:</b>
-          <span>{record.sourcePack.sources.slice(0, 3).map((source) => source.title.split('—')[0].trim()).join(' • ')}</span>
-        </div>
-      )}
-      {hasDossier && <button className="dossier-button" onClick={() => onOpenDossier(record)}>Открыть разбор источников</button>}
-      {record.sourceUrl && <a className="dossier-button source-link" href={record.sourceUrl} target="_blank" rel="noreferrer">Открыть источник: {record.sourceName || 'внешний источник'}</a>}
-    </article>
-  );
-}
-
-function DossierPage({ dossierId, go }) {
-  const record = allRecords.find((item) => item.id === dossierId || normalizeText(item.title) === normalizeText(dossierId));
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    setData(null);
-    setError('');
-
-    // Готовое локальное досье не должно зависеть от доступности внешнего API.
-    if (!record) {
-      getDossier(dossierId)
-        .then((value) => active && setData(value))
-        .catch(() => active && setError('Сервис временно недоступен. Попробуйте обновить страницу.'));
-    }
-
-    return () => { active = false; };
-  }, [dossierId, record]);
-
-  if (record) return <section className="page dossier-page"><div className="breadcrumbs"><button onClick={() => go('home')}>Главная</button><span>→</span><button onClick={() => go('explore')}>Поиск</button><span>→</span><b>{record.title}</b></div><Dossier record={record} onClose={() => go('explore')} /></section>;
-  if (error) return <section className="page dossier-page"><div className="dossier glass"><h2>Сервис временно недоступен</h2><p>{error}</p><button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button></div></section>;
-  if (!data) return <section className="page dossier-page"><div className="dossier glass loading-state">Строим исследовательский план…</div></section>;
-  return <UniversalDossier data={data} go={go} />;
-}
-
-function UniversalDossier({ data, go }) {
-  return <section className="page dossier-page"><div className="breadcrumbs"><button onClick={() => go('home')}>Главная</button><span>→</span><button onClick={() => go('explore')}>Поиск</button><span>→</span><b>{data.title}</b></div><article className="dossier glass"><div className="dossier-head"><div><span className="eyebrow"><Sparkles size={16} /> универсальное досье</span><h2>{data.title}</h2><p>{data.entityType} • {data.status === 'needs-live-research' ? 'внешние источники временно недоступны' : 'данные из внешних источников'}</p></div><button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button></div><p className="dossier-summary">{data.summary}</p><section className="dossier-section"><h3>Быстрые факты</h3><div className="fact-list">{data.quickFacts.map((fact) => <div className="fact-row" key={fact.label}><div><b>{fact.label}</b><p>{fact.value}</p></div><span>уточняется</span></div>)}</div></section><section className="dossier-section"><h3>План исследования</h3><ol>{data.researchPipeline.map((step) => <li key={step}>{step}</li>)}</ol></section><section className="dossier-section"><h3>Точки зрения</h3><div className="perspective-grid">{data.perspectives.map((view) => <div className="perspective" key={view.side}><b>{view.side}</b><p>{view.thesis}</p><small>{view.caution}</small></div>)}</div></section><section className="dossier-section"><h3>Найденные материалы</h3><div className="source-table">{(data.sources || []).map((source) => <a href={source.sourceUrl} target="_blank" rel="noreferrer" key={source.id}><div><b>{source.title}</b><p>{source.summary}</p><small>{source.kind} • {source.sourceName}</small></div><ExternalLink size={18} /></a>)}</div></section></article></section>;
-}
-
-function Dossier({ record, onClose }) {
-  return (
-    <article className="dossier glass">
-      <div className="dossier-head">
-        <div>
-          <span className="eyebrow"><Shield size={16} /> проверка и источники</span>
-          <h2>{record.title}</h2>
-          <p>{record.years || record.period || record.timeline} • {record.region || record.kind}</p>
-        </div>
-        {onClose && <button className="close-dossier" onClick={onClose}>Назад к поиску</button>}
-      </div>
-
-      {record.sourcePack?.summary && <p className="dossier-summary">{record.sourcePack.summary}</p>}
-
-      {record.keyMoments?.length > 0 && (
-        <section className="dossier-section">
-          <h3>Ключевые моменты</h3>
-          <div className="moment-grid">
-            {record.keyMoments.map((moment) => (
-              <div className="moment" key={`${moment.date}-${moment.title}`}>
-                <span>{moment.date}</span>
-                <b>{moment.title}</b>
-                <p>{moment.text}</p>
-                <em>{moment.status}</em>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {record.perspectives?.length > 0 && (
-        <section className="dossier-section">
-          <h3>Стороны взгляда</h3>
-          <div className="perspective-grid">
-            {record.perspectives.map((view) => (
-              <div className="perspective" key={view.side}>
-                <b>{view.side}</b>
-                <p>{view.thesis}</p>
-                <small>{view.caution}</small>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {record.factCheck?.length > 0 && (
-        <section className="dossier-section">
-          <h3>Проверка утверждений</h3>
-          <div className="fact-list">
-            {record.factCheck.map((fact) => (
-              <div className="fact-row" key={fact.claim}>
-                <div>
-                  <b>{fact.claim}</b>
-                  <p>{fact.explanation}</p>
-                </div>
-                <span>{fact.assessment}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {record.sourcePack?.sources?.length > 0 && (
-        <section className="dossier-section">
-          <h3>Источники и достоверность</h3>
-          <div className="source-table">
-            {record.sourcePack.sources.map((source) => (
-              <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>
-                <div>
-                  <b>{source.title}</b>
-                  <p>{source.note}</p>
-                  <small>{source.type} • {source.stance}</small>
-                </div>
-                <span className={`reliability ${source.reliability.includes('высок') ? 'high' : 'medium'}`}>{source.reliability}</span>
-                <ExternalLink size={18} />
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
     </article>
   );
 }

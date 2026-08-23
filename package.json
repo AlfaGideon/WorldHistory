@@ -9,6 +9,8 @@
     "dev:web": "vite --host 0.0.0.0",
     "dev:api": "node server/index.js",
     "build": "vite build",
+    "lint": "eslint .",
+    "test": "node --test server/**/*.test.js && vitest run src",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
@@ -20,5 +22,12 @@
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
+    "vitest": "^4.1.11"
   }
 }
