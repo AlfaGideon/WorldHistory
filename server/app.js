@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { liveSearch } from './services/search.js';
 import { buildDossier } from './services/dossierBuilder.js';
-import { analyzeSource } from './services/sourceAnalyzer.js';
+import { analyzeSource, SourceUrlError } from './services/sourceAnalyzer.js';
 
 async function safeSearch(search, query, label) {
   try {
@@ -58,6 +58,7 @@ export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource 
     try {
       return res.json(await sourceAnalyzer(url));
     } catch (error) {
+      if (error instanceof SourceUrlError) return res.status(400).json({ error: error.message });
       return res.status(502).json({ error: 'Не удалось загрузить источник', details: error.message });
     }
   });

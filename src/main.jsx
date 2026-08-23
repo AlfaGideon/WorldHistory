@@ -265,7 +265,24 @@ function Sources() {
         <div><b>Проверить внешний источник</b><p>Вставьте URL статьи или документа — backend загрузит страницу и подготовит черновой анализ.</p></div>
         <div className="analyzer-row"><input value={url} onChange={(event) => setUrl(event.target.value)} type="url" required placeholder="https://example.org/article" /><button className="primary" disabled={loading}>{loading ? 'Анализируем…' : 'Анализировать'}</button></div>
         {error && <div className="api-notice">{error}</div>}
-        {analysis && <div className="analysis-result"><h3>{analysis.title}</h3><small>{analysis.status} • {analysis.characters} знаков</small><p>{analysis.preview}</p><b>Оценка: {analysis.reliabilityHint}</b></div>}
+        {analysis && (
+          <div className="analysis-result">
+            <h3>{analysis.title}</h3>
+            <div className="analysis-meta">
+              <div><span>HTTP</span><b>{analysis.status}</b></div>
+              <div><span>Автор</span><b>{analysis.author || 'не найден'}</b></div>
+              <div><span>Дата</span><b>{analysis.publishedAt || 'не найдена'}</b></div>
+              <div><span>Язык</span><b>{analysis.language || 'не определён'}</b></div>
+              <div><span>Объём</span><b>{analysis.characters} знаков</b></div>
+              <div><span>Ссылки</span><b>{analysis.links?.length || 0}</b></div>
+            </div>
+            {analysis.description && <p className="analysis-description">{analysis.description}</p>}
+            <h4>Извлечённый текст</h4>
+            <p>{analysis.preview || 'Основной текст не найден.'}</p>
+            {analysis.headings?.length > 0 && <div className="analysis-outline"><b>Структура материала</b><div className="chips">{analysis.headings.slice(0, 8).map((heading) => <em key={heading}>{heading}</em>)}</div></div>}
+            <div className="analysis-verdict"><Shield size={18} /><b>Оценка: {analysis.reliabilityHint}</b></div>
+          </div>
+        )}
       </form>
       <div className="sources-grid">
         {sourceGroups.map((group) => (
