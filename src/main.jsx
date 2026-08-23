@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { conflicts, countries, eras, glossary, sourceGroups, studyPaths } from './historyData';
 import './styles.css';
+import { getDossier, searchHistory } from './api/client';
 
 const nav = [
   { id: 'home', label: 'Главная', icon: Compass, path: '/' },
@@ -219,45 +220,41 @@ function Home({ go }) {
 function Explore({ go }) {
   const [query, setQuery] = useState('война');
   const [type, setType] = useState('Все');
-  const results = useSearch(query, type);
+  const [results, setResults] = useState([]);
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(async () => {
+      setStatus('loading'); setError('');
+      try {
+        const data = await searchHistory(query, type === 'Все' ? 'all' : type);
+        if (active) { setResults(data.results || []); setStatus('ready'); }
+      } catch (err) {
+        if (active) { setResults([]); setError('Не удалось получить данные из внешних источников. Попробуйте ещё раз.'); setStatus('error'); }
+      }
+    }, 350);
+    return () => { active = false; clearTimeout(timer); };
+  }, [query, type]);
 
+  const displayResults = results;
   return (
     <section className="page">
-      <PageTitle icon={Search} eyebrow="исследователь" title="Глобальный поиск по истории" text="Введите страну, эпоху, событие, регион или понятие. Следующий этап — подключить backend-поиск и автоматический сбор источников для любой темы, а не только для заранее внесённых карточек." />
+      <PageTitle icon={Search} eyebrow="исследователь" title="Глобальный поиск по истории" text="Введите страну, эпоху, событие, регион или понятие. Поиск обращается к backend API и умеет открыть универсальное досье даже для темы вне локальной базы." />
       <div className="search-console glass">
-        <div className="search-input">
-          <Search size={22} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Например: Франция, Китай, Османская империя, Косово, Чечня, Первая мировая" />
-        </div>
-        <div className="filters">
-          <Filter size={18} />
-          {['Все', 'Эпоха', 'Страна', 'Конфликт'].map((item) => (
-            <button key={item} className={type === item ? 'active' : ''} onClick={() => setType(item)}>{item}</button>
-          ))}
-        </div>
+        <div className="search-input"><Search size={22} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Например: Франция, Китай, Османская империя, Косово, Чечня" /></div>
+        <div className="filters"><Filter size={18} />{['Все', 'Эпоха', 'Страна', 'Конфликт'].map((item) => <button key={item} className={type === item ? 'active' : ''} onClick={() => setType(item)}>{item}</button>)}</div>
       </div>
-
-      <div className="truth-note glass">
-        <Shield size={22} />
-        <div>
-          <b>Цель поисковика</b>
-          <p>Не хранить вручную одну тему, а строить универсальное досье: факты, участники, хронология, источники, достоверность, позиции сторон и спорные утверждения. Сейчас включён первый фронтенд-шаблон, дальше подключаем backend и парсинг.</p>
-        </div>
-      </div>
-
-      <div className="quick-tags">
-        {glossary.map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}
-        {['Франция', 'Китай', 'Россия', 'Османская империя', 'Косово'].map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}
-      </div>
-
-      <div className="results-meta">Найдено в локальном прототипе: <b>{results.length}</b></div>
-      <div className="result-grid">
-        {results.map((record) => <ResultCard key={`${record.kind}-${record.id}`} record={record} onOpenDossier={(item) => go(`/dossier/${encodeURIComponent(item.id)}`)} />)}
-      </div>
+      <div className="truth-note glass"><Shield size={22} /><div><b>Универсальный исследователь</b><p>Сначала показываем найденные сущности, затем backend строит план исследования с фактами, источниками, позициями сторон и оговорками о достоверности.</p></div></div>
+      {error && <div className="api-notice">{error}</div>}
+      <div className="quick-tags">{glossary.map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}{['Франция', 'Китай', 'Россия', 'Османская империя', 'Косово'].map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}</div>
+      <div className="results-meta">{status === 'loading' ? 'Обновляем результаты…' : 'Найдено: '}<b>{displayResults.length}</b></div>
+      <div className="result-grid">{displayResults.map((record) => <ResultCard key={`${record.kind}-${record.id}`} record={{ ...record, title: record.title || record.name, period: record.dates }} onOpenDossier={(item) => go(`/dossier/${encodeURIComponent(item.id || item.title)}`)} />)}</div>
+      {!displayResults.length && status !== 'loading' && <div className="empty-state glass">Ничего не найдено. Откройте досье по этому запросу — система попробует сформировать универсальный план исследования.</div>}
+      <button className="primary universal-button" onClick={() => go(`/dossier/${encodeURIComponent(query)}`)} disabled={!query.trim()}><Sparkles size={18} /> Построить досье по «{query || 'теме'}»</button>
     </section>
   );
 }
-
 
 function Eras() {
   return (
@@ -428,12 +425,19 @@ function ResultCard({ record, onOpenDossier }) {
         </div>
       )}
       {hasDossier && <button className="dossier-button" onClick={() => onOpenDossier(record)}>Открыть разбор источников</button>}
+      {record.sourceUrl && <a className="dossier-button source-link" href={record.sourceUrl} target="_blank" rel="noreferrer">Открыть источник: {record.sourceName || 'внешний источник'}</a>}
     </article>
   );
 }
 
 function DossierPage({ dossierId, go }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => { let active = true; getDossier(dossierId).then((value) => active && setData(value)).catch((err) => active && setError(err.message)); return () => { active = false; }; }, [dossierId]);
   const record = allRecords.find((item) => item.id === dossierId || normalizeText(item.title) === normalizeText(dossierId));
+  if (error) return <section className="page dossier-page"><div className="dossier glass"><h2>Не удалось загрузить досье</h2><p>{error}</p><button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button></div></section>;
+  if (!data) return <section className="page dossier-page"><div className="dossier glass loading-state">Строим исследовательский план…</div></section>;
+  if (!record && data) return <UniversalDossier data={data} go={go} />;
 
   if (!record) {
     return (
@@ -464,6 +468,10 @@ function DossierPage({ dossierId, go }) {
       <Dossier record={record} onClose={() => go('explore')} />
     </section>
   );
+}
+
+function UniversalDossier({ data, go }) {
+  return <section className="page dossier-page"><div className="breadcrumbs"><button onClick={() => go('home')}>Главная</button><span>→</span><button onClick={() => go('explore')}>Поиск</button><span>→</span><b>{data.title}</b></div><article className="dossier glass"><div className="dossier-head"><div><span className="eyebrow"><Sparkles size={16} /> универсальное досье</span><h2>{data.title}</h2><p>{data.entityType} • {data.status === 'needs-live-research' ? 'требуется проверка источников' : 'локальная база'}</p></div><button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button></div><p className="dossier-summary">{data.summary}</p><section className="dossier-section"><h3>Быстрые факты</h3><div className="fact-list">{data.quickFacts.map((fact) => <div className="fact-row" key={fact.label}><div><b>{fact.label}</b><p>{fact.value}</p></div><span>уточняется</span></div>)}</div></section><section className="dossier-section"><h3>План исследования</h3><ol>{data.researchPipeline.map((step) => <li key={step}>{step}</li>)}</ol></section><section className="dossier-section"><h3>Точки зрения</h3><div className="perspective-grid">{data.perspectives.map((view) => <div className="perspective" key={view.side}><b>{view.side}</b><p>{view.thesis}</p><small>{view.caution}</small></div>)}</div></section><section className="dossier-section"><h3>Найденные материалы</h3><div className="source-table">{(data.sources || []).map((source) => <a href={source.sourceUrl} target="_blank" rel="noreferrer" key={source.id}><div><b>{source.title}</b><p>{source.summary}</p><small>{source.kind} • {source.sourceName}</small></div><ExternalLink size={18} /></a>)}</div></section></article></section>;
 }
 
 function Dossier({ record, onClose }) {
