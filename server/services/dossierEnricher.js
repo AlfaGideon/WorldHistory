@@ -140,7 +140,7 @@ export function infoboxFromEntity(entity, labelOf = (id) => id) {
 
   const start = withEra(ITEM_CLAIMS.start) || withEra(ITEM_CLAIMS.inception) || withEra(ITEM_CLAIMS.pointInTime);
   const end = withEra(ITEM_CLAIMS.end) || withEra(ITEM_CLAIMS.dissolution);
-  const dates = start && end ? `${start} — ${end}` : start || null;
+  const dates = start && end ? (start === end ? start : `${start} — ${end}`) : start || null;
 
   const infobox = {};
   if (typeLabels.length) infobox.type = typeLabels.join(', ');

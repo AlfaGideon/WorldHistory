@@ -80,6 +80,15 @@ test('infoboxFromEntity maps claims into dossier fields via labels', () => {
   assert.equal(infobox.participants, 'Османская империя, Сербское деспотство');
   assert.deepEqual(referencedEntityIds(entity).sort(), ['Q1', 'Q198', 'Q2', 'Q404'].sort());
   assert.equal(infoboxFromEntity({ claims: {} }), null);
+
+  // A one-day battle must not produce "15 июня 1389 — 15 июня 1389".
+  const singleDay = infoboxFromEntity({
+    claims: {
+      P580: [{ mainsnak: { datavalue: { value: { time: '+1389-06-15T00:00:00Z', precision: 11 } } } }],
+      P582: [{ mainsnak: { datavalue: { value: { time: '+1389-06-15T00:00:00Z', precision: 11 } } } }],
+    },
+  }, (id) => id);
+  assert.equal(singleDay.dates, '15 июня 1389');
 });
 
 test('abstractFromInvertedIndex rebuilds OpenAlex abstracts', () => {
