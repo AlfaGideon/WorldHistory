@@ -1,6 +1,6 @@
-import { fetchJson } from './http.js';
+import { fetchJson as defaultFetchJson } from './http.js';
 
-const wikipedia = (query) =>
+const wikipedia = (fetchJson, query) =>
   fetchJson(`https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=8&format=json&origin=*`)
     .then((data) => (data.query?.search || []).map((item) => ({
       id: `wiki:${item.title}`,
@@ -11,7 +11,7 @@ const wikipedia = (query) =>
       sourceName: 'Wikipedia',
     })));
 
-const wikidata = (query) =>
+const wikidata = (fetchJson, query) =>
   fetchJson(`https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(query)}&language=ru&uselang=ru&format=json&limit=8`)
     .then((data) => (data.search || []).map((item) => ({
       id: `wikidata:${item.id}`,
@@ -22,7 +22,7 @@ const wikidata = (query) =>
       sourceName: 'Wikidata',
     })));
 
-const openAlex = (query) =>
+const openAlex = (fetchJson, query) =>
   fetchJson(`https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=8`)
     .then((data) => (data.results || []).map((item) => ({
       id: `openalex:${item.id}`,
@@ -33,7 +33,7 @@ const openAlex = (query) =>
       sourceName: 'OpenAlex',
     })));
 
-const europeana = (query, apiKey) =>
+const europeana = (fetchJson, query, apiKey) =>
   fetchJson(`https://api.europeana.eu/record/v2/search.json?wskey=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(query)}&rows=8`)
     .then((data) => (data.items || []).map((item) => ({
       id: `europeana:${item.id}`,
@@ -44,14 +44,33 @@ const europeana = (query, apiKey) =>
       sourceName: 'Europeana',
     })));
 
-export async function liveSearch(query) {
-  const requests = [wikipedia(query), wikidata(query), openAlex(query)];
-  if (process.env.EUROPEANA_KEY) requests.push(europeana(query, process.env.EUROPEANA_KEY));
+/**
+ * Queries every provider through the injected HTTP client (which honors the
+ * network settings: direct / Tor / custom proxy). Returns results plus
+ * per-provider failures so the UI can explain *why* data is missing.
+ */
+export async function liveSearchDetailed(query, { fetchJson = defaultFetchJson } = {}) {
+  const providers = [
+    ['Wikipedia', wikipedia(fetchJson, query)],
+    ['Wikidata', wikidata(fetchJson, query)],
+    ['OpenAlex', openAlex(fetchJson, query)],
+  ];
+  if (process.env.EUROPEANA_KEY) providers.push(['Europeana', europeana(fetchJson, query, process.env.EUROPEANA_KEY)]);
 
-  const settled = await Promise.allSettled(requests);
+  const settled = await Promise.allSettled(providers.map(([, request]) => request));
   const results = settled
     .flatMap((item) => item.status === 'fulfilled' ? item.value : [])
     .filter((item) => item?.title);
+  const errors = settled
+    .map((item, index) => item.status === 'rejected' ? { source: providers[index][0], message: String(item.reason?.message || item.reason) } : null)
+    .filter(Boolean);
 
-  return [...new Map(results.map((item) => [item.title.toLowerCase(), item])).values()];
+  return {
+    results: [...new Map(results.map((item) => [item.title.toLowerCase(), item])).values()],
+    errors,
+  };
+}
+
+export async function liveSearch(query, options = {}) {
+  return (await liveSearchDetailed(query, options)).results;
 }

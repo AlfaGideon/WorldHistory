@@ -84,3 +84,106 @@ test('search endpoint reuses a fresh cached response', async () => {
     await new Promise((resolve, reject) => cacheServer.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+const torDetectorStub = async () => ({
+  host: '127.0.0.1',
+  probes: [
+    { host: '127.0.0.1', port: 9150, open: false, note: 'Tor Browser' },
+    { host: '127.0.0.1', port: 9050, open: false, note: 'служба tor' },
+  ],
+  detected: null,
+});
+
+test('search reports the active network route and an offline hint', async () => {
+  const app = createApp({ search: async () => [], torDetector: torDetectorStub });
+  const server = await new Promise((resolve) => {
+    const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+  });
+  const url = `http://127.0.0.1:${server.address().port}/api/search?q=${encodeURIComponent('война')}`;
+  try {
+    const body = await (await fetch(url)).json();
+    assert.equal(body.mode, 'temporarily-offline');
+    assert.ok(body.hint.includes('Настройки'));
+    assert.equal(body.network.mode, 'direct');
+    assert.equal(body.network.label, 'Прямое подключение');
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test('network settings endpoints return, validate and persist the route', async () => {
+  const stored = new Map();
+  const settingsStore = {
+    get: (key) => stored.get(key),
+    set: (key, value) => stored.set(key, value),
+  };
+  const app = createApp({ settingsStore, torDetector: torDetectorStub });
+  const server = await new Promise((resolve) => {
+    const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const initial = await (await fetch(`${base}/api/network/settings`)).json();
+    assert.equal(initial.settings.mode, 'direct');
+    assert.equal(initial.torDetection.detected, null);
+    assert.ok(initial.hint.includes('Tor не запущен'));
+
+    const bad = await fetch(`${base}/api/network/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'carrier-pigeon' }),
+    });
+    assert.equal(bad.status, 400);
+    assert.ok((await bad.json()).error.includes('Режим подключения'));
+
+    const good = await fetch(`${base}/api/network/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'tor', torPort: 9150 }),
+    });
+    const saved = await good.json();
+    assert.equal(good.status, 200);
+    assert.equal(saved.active.mode, 'tor');
+    assert.equal(saved.active.proxyUri, 'socks5://127.0.0.1:9150');
+    assert.equal(saved.active.remoteDns, true);
+    assert.equal(stored.get('network').mode, 'tor');
+
+    const health = await (await fetch(`${base}/api/health`)).json();
+    assert.equal(health.network.mode, 'tor');
+    assert.equal(health.network.timeoutMs, 45000);
+
+    const brokenJson = await fetch(`${base}/api/network/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: '{oops',
+    });
+    assert.equal(brokenJson.status, 400);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test('network test endpoint returns diagnostics with a recommendation', async () => {
+  const app = createApp({
+    torDetector: torDetectorStub,
+    networkTester: async () => ({
+      testUrl: 'https://ru.wikipedia.org/w/api.php',
+      results: [
+        { id: 'direct', label: 'Прямое подключение', proxyUri: null, ok: false, ms: 40, error: 'ECONNRESET', active: true },
+        { id: 'tor-browser', label: 'Tor Browser (127.0.0.1:9150)', proxyUri: 'socks5://127.0.0.1:9150', ok: true, ms: 900, error: null, active: false },
+      ],
+      recommendation: { routeId: 'tor-browser', label: 'Tor Browser (127.0.0.1:9150)', alreadyActive: false },
+      checkedAt: new Date().toISOString(),
+    }),
+  });
+  const server = await new Promise((resolve) => {
+    const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+  });
+  try {
+    const report = await (await fetch(`http://127.0.0.1:${server.address().port}/api/network/test`, { method: 'POST' })).json();
+    assert.equal(report.results.length, 2);
+    assert.equal(report.recommendation.routeId, 'tor-browser');
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});

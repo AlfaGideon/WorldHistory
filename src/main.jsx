@@ -12,6 +12,7 @@ import {
   Map,
   Menu,
   Search,
+  Settings,
   Shield,
   Sparkles,
   Swords,
@@ -20,9 +21,10 @@ import {
 } from 'lucide-react';
 import { conflicts, countries, eras, sourceGroups, studyPaths } from './historyData';
 import './styles.css';
-import { analyzeSource } from './api/client';
+import { analyzeSource, getHealth } from './api/client';
 import DossierPage from './pages/DossierPage';
 import SearchPage from './pages/SearchPage';
+import SettingsPage from './pages/SettingsPage';
 import PageTitle from './components/PageTitle';
 
 const nav = [
@@ -32,6 +34,7 @@ const nav = [
   { id: 'countries', label: 'Страны', icon: Flag, path: '/countries' },
   { id: 'conflicts', label: 'Конфликты', icon: Swords, path: '/conflicts' },
   { id: 'sources', label: 'Источники', icon: Library, path: '/sources' },
+  { id: 'settings', label: 'Настройки', icon: Settings, path: '/settings' },
 ];
 
 const routeMap = Object.fromEntries(nav.map((item) => [item.id, item.path]));
@@ -43,6 +46,41 @@ function parseRoute(pathname = '/') {
     return { page: 'dossier', dossierId: decodeURIComponent(normalized.replace('/dossier/', '')) };
   }
   return { page: pageByPath[normalized] || 'home', dossierId: null };
+}
+
+function ConnectionBadge({ go }) {
+  const [network, setNetwork] = useState(null);
+  const [offline, setOffline] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      try {
+        const health = await getHealth();
+        if (!active) return;
+        setNetwork(health.network || null);
+        setOffline(false);
+      } catch {
+        if (active) setOffline(true);
+      }
+    };
+    check();
+    const timer = setInterval(check, 30_000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
+
+  const label = offline ? 'API недоступен' : network ? `Сеть: ${network.shortLabel}` : 'Сеть: проверяем…';
+  const state = offline ? 'bad' : network?.proxyUri ? 'ok' : 'idle';
+  return (
+    <button
+      className={`conn-badge ${state}`}
+      onClick={() => go('settings')}
+      title={network?.label ? `Маршрут запросов: ${network.label}. Нажмите, чтобы открыть настройки.` : 'Открыть настройки подключения'}
+    >
+      <span className="status-dot" />
+      {label}
+    </button>
+  );
 }
 
 function App() {
@@ -97,7 +135,7 @@ function App() {
         <header className="topbar">
           <button className="menu" onClick={() => setMobileOpen(true)} aria-label="Открыть меню"><Menu /></button>
           <div className="topbar-title">История мира • страны • войны • источники</div>
-          <button className="ghost" onClick={() => go('explore')}>Начать поиск</button>
+          <ConnectionBadge go={go} />
         </header>
         {route.page === 'home' && <Home go={go} />}
         {route.page === 'explore' && <SearchPage go={go} />}
@@ -105,6 +143,7 @@ function App() {
         {route.page === 'countries' && <Countries />}
         {route.page === 'conflicts' && <Conflicts go={go} />}
         {route.page === 'sources' && <Sources />}
+        {route.page === 'settings' && <SettingsPage />}
         {route.page === 'dossier' && <DossierPage key={route.dossierId} dossierId={route.dossierId} go={go} />}
       </main>
     </div>

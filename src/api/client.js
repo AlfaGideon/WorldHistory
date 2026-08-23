@@ -23,7 +23,7 @@ export function createDossierFallback(query) {
     title,
     status: 'local-research-plan',
     entityType: 'историческая тема',
-    brief: `Досье по теме «${title}» открыто в автономном режиме. Для точных дат, участников и оценок подключите источники или повторите попытку позже.`,
+    brief: `Досье по теме «${title}» открыто в автономном режиме: сейчас нет доступа к внешним источникам. Подключитесь в разделе «Настройки» (напрямую, через Tor Browser или прокси), и данные загрузятся.`,
     infobox: {
       type: 'историческая тема',
       dates: 'требуют проверки по источникам',
@@ -50,3 +50,17 @@ export function createDossierFallback(query) {
 
 export const analyzeSource = (url) =>
   request(`/api/source/analyze?url=${encodeURIComponent(url)}`);
+
+export const getNetworkSettings = () => request('/api/network/settings');
+
+export const saveNetworkSettings = (settings) =>
+  request('/api/network/settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+
+export const runNetworkTest = () =>
+  request('/api/network/test', { method: 'POST', body: JSON.stringify({}) });
+
+export const getHealth = () => request('/api/health');

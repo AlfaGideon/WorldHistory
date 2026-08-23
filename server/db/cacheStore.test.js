@@ -16,10 +16,10 @@ after(() => db.close());
 
 test('database migrations create the research schema', () => {
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => row.name);
-  for (const table of ['entities', 'sources', 'claims', 'dossiers', 'parsed_sources', 'search_cache', 'schema_migrations']) {
+  for (const table of ['entities', 'sources', 'claims', 'dossiers', 'parsed_sources', 'search_cache', 'settings', 'schema_migrations']) {
     assert.ok(tables.includes(table), `missing table ${table}`);
   }
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 2);
 });
 
 test('search cache normalizes keys and reports expiration', () => {

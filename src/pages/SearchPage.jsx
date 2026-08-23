@@ -10,15 +10,27 @@ export default function SearchPage({ go }) {
   const [results, setResults] = useState([]);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
+  const [meta, setMeta] = useState(null);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(async () => {
-      setStatus('loading'); setError('');
+      setStatus('loading'); setError(''); setMeta(null);
       try {
         const data = await searchHistory(query, type === 'Все' ? 'all' : type);
-        if (active) { setResults(data.results || []); setStatus('ready'); }
+        if (active) {
+          setResults(data.results || []);
+          setStatus(data.mode === 'temporarily-offline' ? 'error' : 'ready');
+          setMeta(data);
+          if (data.mode === 'temporarily-offline') {
+            setError(data.hint || 'Внешние источники недоступны.');
+          }
+        }
       } catch {
-        if (active) { setResults([]); setError('Не удалось получить данные из внешних источников. Попробуйте ещё раз.'); setStatus('error'); }
+        if (active) {
+          setResults([]);
+          setError('Backend недоступен. Запустите приложение командой npm run dev и повторите попытку.');
+          setStatus('error');
+        }
       }
     }, 350);
     return () => { active = false; clearTimeout(timer); };
@@ -33,9 +45,17 @@ export default function SearchPage({ go }) {
         <div className="filters"><Filter size={18} />{['Все', 'Эпоха', 'Страна', 'Конфликт'].map((item) => <button key={item} className={type === item ? 'active' : ''} onClick={() => setType(item)}>{item}</button>)}</div>
       </div>
       <div className="truth-note glass"><Shield size={22} /><div><b>Live-исследователь</b><p>Сначала показываем найденные сущности, затем backend строит план исследования с фактами, источниками, позициями сторон и оговорками о достоверности.</p></div></div>
-      {error && <div className="api-notice">{error}</div>}
+      {error && (
+        <div className="api-notice with-action">
+          <span>{error}</span>
+          <button onClick={() => go('settings')}>Открыть настройки подключения</button>
+        </div>
+      )}
       <div className="quick-tags">{glossary.map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}{['Франция', 'Китай', 'Россия', 'Османская империя', 'Косово'].map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}</div>
-      <div className="results-meta">{status === 'loading' ? 'Обновляем результаты…' : 'Найдено: '}<b>{displayResults.length}</b></div>
+      <div className="results-meta">
+        {status === 'loading' ? 'Обновляем результаты…' : 'Найдено: '}<b>{displayResults.length}</b>
+        {meta?.network && <span className="route-chip">маршрут: {meta.network.shortLabel}{meta.mode === 'cache' ? ' • из кэша' : ''}</span>}
+      </div>
       <div className="result-grid">{displayResults.map((record) => <ResultCard key={`${record.kind}-${record.id}`} record={{ ...record, title: record.title || record.name, period: record.dates }} onOpenDossier={(item) => go(`/dossier/${encodeURIComponent(item.title || item.id)}`)} />)}</div>
       {!displayResults.length && status !== 'loading' && <div className="empty-state glass">Ничего не найдено. Откройте досье по этому запросу — система попробует сформировать универсальный план исследования.</div>}
       <button className="primary universal-button" onClick={() => go(`/dossier/${encodeURIComponent(query)}`)} disabled={!query.trim()}><Sparkles size={18} /> Построить досье по «{query || 'теме'}»</button>
