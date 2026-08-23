@@ -60,3 +60,27 @@ test('unknown API route returns JSON 404', async () => {
   assert.equal(response.status, 404);
   assert.equal((await response.json()).error, 'Маршрут API не найден');
 });
+
+test('search endpoint reuses a fresh cached response', async () => {
+  let searchCalls = 0;
+  let stored = null;
+  const cache = {
+    getSearch: () => stored,
+    setSearch: (query, type, data) => { stored = { data, stale: false }; },
+    getDossier: () => null,
+    getSource: () => null,
+  };
+  const app = createApp({ cache, search: async () => { searchCalls += 1; return [sampleResult]; } });
+  const cacheServer = await new Promise((resolve) => {
+    const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+  });
+  const url = `http://127.0.0.1:${cacheServer.address().port}/api/search?q=${encodeURIComponent('Франция')}`;
+
+  try {
+    assert.equal((await (await fetch(url)).json()).cacheStatus, 'miss');
+    assert.equal((await (await fetch(url)).json()).cacheStatus, 'hit');
+    assert.equal(searchCalls, 1);
+  } finally {
+    await new Promise((resolve, reject) => cacheServer.close((error) => error ? reject(error) : resolve()));
+  }
+});

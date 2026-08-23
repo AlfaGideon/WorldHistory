@@ -13,7 +13,7 @@ async function safeSearch(search, query, label) {
   }
 }
 
-export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource } = {}) {
+export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource, cache = null } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(cors());
@@ -24,29 +24,41 @@ export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource 
   });
 
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: 'WorldHistory API', version: '0.1.0' });
+    res.json({ ok: true, service: 'WorldHistory API', version: '0.2.0', database: cache ? 'connected' : 'disabled' });
   });
 
   app.get('/api/search', async (req, res) => {
     const query = String(req.query.q || '').trim();
-    if (!query) return res.json({ query, results: [], mode: 'live-multi-source' });
+    const type = String(req.query.type || 'all');
+    if (!query) return res.json({ query, type, results: [], mode: 'live-multi-source', cacheStatus: 'skip' });
 
-    const results = await safeSearch(search, query, 'Live search failed');
-    return res.json({
-      query,
-      type: req.query.type || 'all',
-      mode: results.length ? 'live-multi-source' : 'temporarily-offline',
-      results,
-      sources: [...new Set(results.map((item) => item.sourceName))],
-    });
+    const cached = cache?.getSearch(query, type);
+    if (cached && !cached.stale) return res.json({ ...cached.data, mode: 'cache', cacheStatus: 'hit' });
+
+    const liveResults = await safeSearch(search, query, 'Live search failed');
+    if (liveResults.length) {
+      const payload = { query, type, mode: 'live-multi-source', results: liveResults, sources: [...new Set(liveResults.map((item) => item.sourceName))] };
+      cache?.setSearch(query, type, payload);
+      return res.json({ ...payload, cacheStatus: 'miss' });
+    }
+    if (cached) return res.json({ ...cached.data, mode: 'stale-cache', cacheStatus: 'stale' });
+
+    return res.json({ query, type, mode: 'temporarily-offline', results: [], sources: [], cacheStatus: 'miss' });
   });
 
   app.get('/api/dossier/:query', async (req, res) => {
     const query = String(req.params.query || '').trim();
     if (!query) return res.status(400).json({ error: 'Тема досье не указана' });
 
+    const cached = cache?.getDossier(query);
+    if (cached && !cached.stale) return res.json({ ...cached.data, cacheStatus: 'hit' });
+
     const results = await safeSearch(search, query, 'Dossier search failed');
-    return res.json(buildDossier(query, results));
+    if (!results.length && cached) return res.json({ ...cached.data, cacheStatus: 'stale' });
+
+    const dossier = buildDossier(query, results);
+    if (results.length) cache?.setDossier(query, dossier);
+    return res.json({ ...dossier, cacheStatus: 'miss' });
   });
 
   app.get('/api/source/analyze', async (req, res) => {
@@ -55,10 +67,16 @@ export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource 
       return res.status(400).json({ error: 'Передайте URL в query-параметре ?url=https://...' });
     }
 
+    const cached = cache?.getSource(url);
+    if (cached && !cached.stale) return res.json({ ...cached.data, cacheStatus: 'hit' });
+
     try {
-      return res.json(await sourceAnalyzer(url));
+      const analysis = await sourceAnalyzer(url);
+      cache?.setSource(url, analysis);
+      return res.json({ ...analysis, cacheStatus: 'miss' });
     } catch (error) {
       if (error instanceof SourceUrlError) return res.status(400).json({ error: error.message });
+      if (cached) return res.json({ ...cached.data, cacheStatus: 'stale' });
       return res.status(502).json({ error: 'Не удалось загрузить источник', details: error.message });
     }
   });

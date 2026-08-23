@@ -2,6 +2,9 @@
   "name": "world-history-atlas",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "description": "Beautiful multipage world history discovery and learning app.",
   "type": "module",
   "scripts": {
@@ -10,7 +13,7 @@
     "dev:api": "node server/index.js",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test server/*.test.js server/services/*.test.js && vitest run src",
+    "test": "node --test server/*.test.js server/services/*.test.js server/db/*.test.js && vitest run src",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
