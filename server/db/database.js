@@ -65,6 +65,17 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_parsed_sources_expiry ON parsed_sources(expires_at);
     `,
   },
+  {
+    version: 2,
+    name: 'application settings (network and proxy)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 export function migrateDatabase(db) {

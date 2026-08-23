@@ -59,6 +59,9 @@ function UniversalDossier({ data, go }) {
     myths: data.myths || [],
     sources: (data.sources || []).map((source) => ({ ...source, url: source.sourceUrl, type: source.kind, stance: source.sourceName, note: source.summary, reliability: 'требует оценки' })),
     researchPipeline: data.researchPipeline || [],
+    notice: ['local-research-plan', 'needs-live-research'].includes(data.status)
+      ? 'Досье построено без внешних данных: сейчас backend не может получить материалы. Подключите маршрут (напрямую, Tor Browser или прокси) в настройках и обновите страницу.'
+      : null,
   }), [data]);
 
   return <DossierLayout view={view} go={go} />;
@@ -109,6 +112,13 @@ function DossierLayout({ view, go }) {
           <div><span className="eyebrow"><Icon size={16} /> {view.eyebrow}</span><h2>{view.title}</h2><p>{view.meta}</p></div>
           <button className="close-dossier" onClick={() => go('explore')}>Назад к поиску</button>
         </div>
+
+        {view.notice && (
+          <div className="api-notice with-action dossier-notice">
+            <span>{view.notice}</span>
+            <button onClick={() => go('settings')}>Открыть настройки</button>
+          </div>
+        )}
 
         <nav className="dossier-tabs" aria-label="Разделы досье">
           {tabs.map(({ id, label, icon: TabIcon }) => <button key={id} className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}><TabIcon size={17} />{label}</button>)}

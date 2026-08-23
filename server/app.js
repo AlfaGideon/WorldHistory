@@ -1,49 +1,96 @@
 import express from 'express';
 import cors from 'cors';
-import { liveSearch } from './services/search.js';
+import { liveSearchDetailed } from './services/search.js';
 import { buildDossier } from './services/dossierBuilder.js';
 import { analyzeSource, SourceUrlError } from './services/sourceAnalyzer.js';
+import { createHttpClient } from './services/http.js';
+import {
+  NetworkSettingsError,
+  checkTorExit,
+  createNetworkManager,
+  detectTorProxy,
+  testNetworkRoutes,
+} from './services/network.js';
+
+const OFFLINE_HINT = 'Внешние источники недоступны. Откройте раздел «Настройки» и подключитесь напрямую, через Tor Browser или свой прокси.';
 
 async function safeSearch(search, query, label) {
   try {
     return await search(query);
   } catch (error) {
     console.error(`${label}:`, error.message);
-    return [];
+    return { results: [], errors: [{ source: label, message: error.message }] };
   }
 }
 
-export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource, cache = null } = {}) {
+export function createApp({
+  search = null,
+  sourceAnalyzer = null,
+  cache = null,
+  settingsStore = null,
+  network = null,
+  networkTester = null,
+  torDetector = detectTorProxy,
+} = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '32kb' }));
+
+  const activeNetwork = network || createNetworkManager({ settingsStore });
+  const http = createHttpClient(activeNetwork);
+  const runSearch = search
+    ? async (query) => ({ results: await search(query), errors: [] })
+    : (query) => liveSearchDetailed(query, { fetchJson: http.fetchJson });
+  const runSourceAnalyzer = sourceAnalyzer || ((url) => analyzeSource(url, {
+    rawFetch: http.rawFetch,
+    remoteDns: activeNetwork.describe().remoteDns,
+  }));
+  const runNetworkTest = networkTester || ((context) => testNetworkRoutes(context));
 
   app.get('/', (req, res) => {
     res.type('html').send(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WorldHistory API</title></head><body><main><h1>WorldHistory API работает</h1><p><a href="/api/health">Проверить API</a></p></main></body></html>`);
   });
 
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: 'WorldHistory API', version: '0.2.0', database: cache ? 'connected' : 'disabled' });
+    res.json({ ok: true, service: 'WorldHistory API', version: '0.3.0', database: cache ? 'connected' : 'disabled', network: activeNetwork.describe() });
   });
 
   app.get('/api/search', async (req, res) => {
     const query = String(req.query.q || '').trim();
     const type = String(req.query.type || 'all');
-    if (!query) return res.json({ query, type, results: [], mode: 'live-multi-source', cacheStatus: 'skip' });
+    if (!query) return res.json({ query, type, results: [], mode: 'live-multi-source', cacheStatus: 'skip', network: activeNetwork.describe() });
 
     const cached = cache?.getSearch(query, type);
-    if (cached && !cached.stale) return res.json({ ...cached.data, mode: 'cache', cacheStatus: 'hit' });
+    if (cached && !cached.stale) return res.json({ ...cached.data, mode: 'cache', cacheStatus: 'hit', network: activeNetwork.describe() });
 
-    const liveResults = await safeSearch(search, query, 'Live search failed');
+    const { results: liveResults, errors } = await safeSearch(runSearch, query, 'Live search failed');
     if (liveResults.length) {
-      const payload = { query, type, mode: 'live-multi-source', results: liveResults, sources: [...new Set(liveResults.map((item) => item.sourceName))] };
+      const payload = {
+        query,
+        type,
+        mode: 'live-multi-source',
+        results: liveResults,
+        sources: [...new Set(liveResults.map((item) => item.sourceName))],
+        providerErrors: errors.length ? errors : undefined,
+        network: activeNetwork.describe(),
+      };
       cache?.setSearch(query, type, payload);
       return res.json({ ...payload, cacheStatus: 'miss' });
     }
-    if (cached) return res.json({ ...cached.data, mode: 'stale-cache', cacheStatus: 'stale' });
+    if (cached) return res.json({ ...cached.data, mode: 'stale-cache', cacheStatus: 'stale', providerErrors: errors, hint: OFFLINE_HINT, network: activeNetwork.describe() });
 
-    return res.json({ query, type, mode: 'temporarily-offline', results: [], sources: [], cacheStatus: 'miss' });
+    return res.json({
+      query,
+      type,
+      mode: 'temporarily-offline',
+      results: [],
+      sources: [],
+      providerErrors: errors,
+      hint: OFFLINE_HINT,
+      network: activeNetwork.describe(),
+      cacheStatus: 'miss',
+    });
   });
 
   app.get('/api/dossier/:query', async (req, res) => {
@@ -51,14 +98,14 @@ export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource,
     if (!query) return res.status(400).json({ error: 'Тема досье не указана' });
 
     const cached = cache?.getDossier(query);
-    if (cached && !cached.stale) return res.json({ ...cached.data, cacheStatus: 'hit' });
+    if (cached && !cached.stale) return res.json({ ...cached.data, cacheStatus: 'hit', network: activeNetwork.describe() });
 
-    const results = await safeSearch(search, query, 'Dossier search failed');
-    if (!results.length && cached) return res.json({ ...cached.data, cacheStatus: 'stale' });
+    const { results, errors } = await safeSearch(runSearch, query, 'Dossier search failed');
+    if (!results.length && cached) return res.json({ ...cached.data, cacheStatus: 'stale', hint: OFFLINE_HINT, network: activeNetwork.describe() });
 
     const dossier = buildDossier(query, results);
     if (results.length) cache?.setDossier(query, dossier);
-    return res.json({ ...dossier, cacheStatus: 'miss' });
+    return res.json({ ...dossier, cacheStatus: 'miss', providerErrors: errors.length ? errors : undefined, network: activeNetwork.describe() });
   });
 
   app.get('/api/source/analyze', async (req, res) => {
@@ -71,7 +118,7 @@ export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource,
     if (cached && !cached.stale) return res.json({ ...cached.data, cacheStatus: 'hit' });
 
     try {
-      const analysis = await sourceAnalyzer(url);
+      const analysis = await runSourceAnalyzer(url);
       cache?.setSource(url, analysis);
       return res.json({ ...analysis, cacheStatus: 'miss' });
     } catch (error) {
@@ -81,6 +128,67 @@ export function createApp({ search = liveSearch, sourceAnalyzer = analyzeSource,
     }
   });
 
+  app.get('/api/network/settings', async (req, res) => {
+    const tor = await torDetector();
+    res.json({
+      settings: activeNetwork.settings,
+      active: activeNetwork.describe(),
+      torDetection: tor,
+      hint: tor.detected
+        ? `Обнаружен ${tor.detected.note} на порту ${tor.detected.port}.`
+        : 'Tor не запущен. Запустите Tor Browser — соединение появится автоматически.',
+    });
+  });
+
+  const updateSettings = async (req, res) => {
+    try {
+      const active = activeNetwork.update(req.body || {});
+      res.json({ settings: activeNetwork.settings, active, torDetection: await torDetector() });
+    } catch (error) {
+      if (error instanceof NetworkSettingsError) return res.status(400).json({ error: error.message });
+      console.error('Failed to update network settings:', error);
+      return res.status(500).json({ error: 'Не удалось сохранить настройки' });
+    }
+  };
+  app.put('/api/network/settings', updateSettings);
+  app.post('/api/network/settings', updateSettings);
+
+  app.post('/api/network/test', async (req, res) => {
+    try {
+      const active = activeNetwork.describe();
+      const report = await runNetworkTest({
+        settings: activeNetwork.settings,
+        activeRouteId: active.mode === 'direct' ? 'direct' : active.mode === 'tor' ? (activeNetwork.settings.torPort === 9150 ? 'tor-browser' : activeNetwork.settings.torPort === 9050 ? 'tor-service' : null) : 'custom',
+      });
+      if (active.proxyUri && report.results.find((result) => result.active && result.ok)) {
+        const dispatcher = activeNetwork.dispatcherFor(activeNetwork.settings);
+        try {
+          report.torExit = await checkTorExit({ dispatcher });
+        } catch {
+          // Exit check is informational only.
+        } finally {
+          try {
+            await dispatcher?.close();
+          } catch {
+            // Closing is best effort.
+          }
+        }
+      }
+      res.json(report);
+    } catch (error) {
+      console.error('Network test failed:', error);
+      res.status(500).json({ error: 'Не удалось выполнить проверку соединения', details: error.message });
+    }
+  });
+
   app.use((req, res) => res.status(404).json({ error: 'Маршрут API не найден' }));
+  // eslint-disable-next-line no-unused-vars
+  app.use((error, req, res, next) => {
+    if (error?.type === 'entity.parse.failed' || error instanceof SyntaxError) {
+      return res.status(400).json({ error: 'Некорректный JSON в теле запроса' });
+    }
+    console.error('API error:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  });
   return app;
 }

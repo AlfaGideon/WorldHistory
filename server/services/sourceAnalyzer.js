@@ -27,7 +27,7 @@ function isPrivateAddress(address) {
     normalized.startsWith('2001:db8:') || normalized.startsWith('::ffff:');
 }
 
-export async function assertPublicUrl(input) {
+export async function assertPublicUrl(input, { remoteDns = false } = {}) {
   let url;
   try {
     url = new URL(input);
@@ -39,24 +39,34 @@ export async function assertPublicUrl(input) {
 
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) throw new SourceUrlError('Локальные адреса запрещены');
-  const addresses = isIP(hostname) ? [{ address: hostname }] : await dns.lookup(hostname, { all: true, verbatim: true });
+  if (isIP(hostname)) {
+    const addresses = [{ address: hostname }];
+    if (addresses.some(({ address }) => isPrivateAddress(address))) throw new SourceUrlError('Локальные и служебные сетевые адреса запрещены');
+    return url;
+  }
+  if (remoteDns) {
+    // Через Tor/прокси DNS резолвируется на стороне прокси (нужно для .onion
+    // и заблокированных локально доменов), локальный lookup не выполняем.
+    return url;
+  }
+  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
   if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) {
     throw new SourceUrlError('Локальные и служебные сетевые адреса запрещены');
   }
   return url;
 }
 
-async function fetchWithSafeRedirects(input) {
-  let current = await assertPublicUrl(input);
+async function fetchWithSafeRedirects(input, { rawFetch = (url, options) => fetch(url, options), remoteDns = false, timeout = 10_000 } = {}) {
+  let current = await assertPublicUrl(input, { remoteDns });
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
-    const response = await fetch(current, {
+    const response = await rawFetch(current, {
       headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(timeout),
       redirect: 'manual',
     });
     if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
       if (redirect === MAX_REDIRECTS) throw new Error('Слишком много перенаправлений');
-      current = await assertPublicUrl(new URL(response.headers.get('location'), current).href);
+      current = await assertPublicUrl(new URL(response.headers.get('location'), current).href, { remoteDns });
       continue;
     }
     return { response, finalUrl: current.href };
@@ -131,8 +141,8 @@ export function parseSourceHtml(html, sourceUrl, status = 200, contentType = 'te
   };
 }
 
-export async function analyzeSource(url) {
-  const { response, finalUrl } = await fetchWithSafeRedirects(url);
+export async function analyzeSource(url, { rawFetch = (target, options) => fetch(target, options), remoteDns = false, timeout } = {}) {
+  const { response, finalUrl } = await fetchWithSafeRedirects(url, { rawFetch, remoteDns, timeout });
   if (!response.ok) throw new Error(`Источник вернул HTTP ${response.status}`);
   const contentType = response.headers.get('content-type') || '';
   if (!/text\/html|application\/xhtml\+xml/i.test(contentType)) {
