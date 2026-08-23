@@ -407,3 +407,12 @@ ol, ul { color: #c3cee4; line-height: 1.75; padding-left: 20px; }
 .universal-button { margin-top: 24px; }
 .universal-button:disabled { opacity: .45; cursor: not-allowed; }
 .empty-state, .loading-state { padding: 24px; color: var(--muted); }
+.source-analyzer { border-radius: 26px; padding: 22px; margin-bottom: 20px; }
+.source-analyzer p { color: var(--muted); margin: 7px 0 16px; }
+.analyzer-row { display: flex; gap: 10px; }
+.analyzer-row input { flex: 1; min-width: 0; padding: 0 15px; height: 46px; border-radius: 14px; border: 1px solid var(--line); background: rgba(0,0,0,.2); color: white; outline: none; }
+.analysis-result { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.analysis-result h3 { margin: 0 0 5px; }
+.analysis-result small { color: var(--accent); }
+.analysis-result p { line-height: 1.6; white-space: pre-wrap; }
+@media (max-width: 520px) { .analyzer-row { flex-direction: column; } }

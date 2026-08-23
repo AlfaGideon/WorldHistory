@@ -9,3 +9,6 @@ export const searchHistory = (query, type = 'all') =>
   request(`/api/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(type)}`);
 
 export const getDossier = (query) => request(`/api/dossier/${encodeURIComponent(query)}`);
+
+export const analyzeSource = (url) =>
+  request(`/api/source/analyze?url=${encodeURIComponent(url)}`);

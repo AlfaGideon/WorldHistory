@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { conflicts, countries, eras, glossary, sourceGroups, studyPaths } from './historyData';
 import './styles.css';
-import { getDossier, searchHistory } from './api/client';
+import { analyzeSource, getDossier, searchHistory } from './api/client';
 
 const nav = [
   { id: 'home', label: 'Главная', icon: Compass, path: '/' },
@@ -245,7 +245,7 @@ function Explore({ go }) {
         <div className="search-input"><Search size={22} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Например: Франция, Китай, Османская империя, Косово, Чечня" /></div>
         <div className="filters"><Filter size={18} />{['Все', 'Эпоха', 'Страна', 'Конфликт'].map((item) => <button key={item} className={type === item ? 'active' : ''} onClick={() => setType(item)}>{item}</button>)}</div>
       </div>
-      <div className="truth-note glass"><Shield size={22} /><div><b>Универсальный исследователь</b><p>Сначала показываем найденные сущности, затем backend строит план исследования с фактами, источниками, позициями сторон и оговорками о достоверности.</p></div></div>
+      <div className="truth-note glass"><Shield size={22} /><div><b>Live-исследователь</b><p>Сначала показываем найденные сущности, затем backend строит план исследования с фактами, источниками, позициями сторон и оговорками о достоверности.</p></div></div>
       {error && <div className="api-notice">{error}</div>}
       <div className="quick-tags">{glossary.map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}{['Франция', 'Китай', 'Россия', 'Османская империя', 'Косово'].map((word) => <button key={word} onClick={() => setQuery(word)}>#{word}</button>)}</div>
       <div className="results-meta">{status === 'loading' ? 'Обновляем результаты…' : 'Найдено: '}<b>{displayResults.length}</b></div>
@@ -345,9 +345,23 @@ function Conflicts({ go }) {
 }
 
 function Sources() {
+  const [url, setUrl] = useState('');
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const inspect = async (event) => {
+    event.preventDefault(); setLoading(true); setError(''); setAnalysis(null);
+    try { setAnalysis(await analyzeSource(url)); } catch (err) { setError(err.message); } finally { setLoading(false); }
+  };
   return (
     <section className="page">
       <PageTitle icon={Library} eyebrow="проверка знаний" title="Каталог источников" text="Надежная история строится на сопоставлении источников. Используйте энциклопедии для ориентации, архивы для доказательств, карты и музеи для контекста." />
+      <form className="source-analyzer glass" onSubmit={inspect}>
+        <div><b>Проверить внешний источник</b><p>Вставьте URL статьи или документа — backend загрузит страницу и подготовит черновой анализ.</p></div>
+        <div className="analyzer-row"><input value={url} onChange={(event) => setUrl(event.target.value)} type="url" required placeholder="https://example.org/article" /><button className="primary" disabled={loading}>{loading ? 'Анализируем…' : 'Анализировать'}</button></div>
+        {error && <div className="api-notice">{error}</div>}
+        {analysis && <div className="analysis-result"><h3>{analysis.title}</h3><small>{analysis.status} • {analysis.characters} знаков</small><p>{analysis.preview}</p><b>Оценка: {analysis.reliabilityHint}</b></div>}
+      </form>
       <div className="sources-grid">
         {sourceGroups.map((group) => (
           <article className="source-group glass" key={group.title}>
