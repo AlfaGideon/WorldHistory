@@ -6,7 +6,7 @@
 
 Исследовательский инструмент по мировой истории: глубокие досье по странам, эпохам, войнам и спорным темам с сопоставлением источников, проверкой фактов и разбором популярных мифов.
 
-Работает как веб-приложение (PWA, офлайн) и как **нативное Android-приложение** (`WorldHistory-Atlas.apk` собирается одной командой и прикрепляется к релизам GitHub).
+Работает как веб-приложение (PWA, офлайн) и как **нативное Android-приложение** (`WorldHistory-Atlas.apk` собирается одной командой, хранится в корне репозитория и публикуется в релизах GitHub).
 
 ---
 
@@ -31,15 +31,11 @@
 ## Установка на телефон (Android)
 
 **Скачать APK (последняя версия):**
-[`WorldHistory-Atlas.apk`](https://github.com/AlfaGideon/WorldHistory/releases/latest/download/WorldHistory-Atlas.apk)
-· [все релизы и что изменилось](https://github.com/AlfaGideon/WorldHistory/releases)
+[`WorldHistory-Atlas.apk`](https://github.com/AlfaGideon/WorldHistory/raw/main/WorldHistory-Atlas.apk)
+· [релизы и история версий](https://github.com/AlfaGideon/WorldHistory/releases)
 
-Размер ~1.3 МБ, `minSdk 24` — Android 7.0 и новее.
-
-> APK прикреплён к **релизу** на GitHub: бинарные файлы не коммитятся в репозиторий
-> (они перечислены в `.gitignore`), поэтому ссылки вида
-> `github.com/…/blob/main/WorldHistory-Atlas.apk` всегда будут отдавать 404.
-> Скачивайте файл из раздела **Releases** — ссылка выше всегда ведёт на свежую сборку.
+Размер ~1.3 МБ, `minSdk 24` — Android 7.0 и новее. Ссылка всегда берёт актуальный
+файл из ветки `main`; описания изменений — в разделе Releases.
 
 Как установить:
 
