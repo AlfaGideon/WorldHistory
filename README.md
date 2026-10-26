@@ -29,12 +29,11 @@
 
 ## Установка на телефон (Android)
 
-**Скачать APK (всегда последняя версия):**
-[`WorldHistory-Atlas.apk`](https://github.com/AlfaGideon/WorldHistory/releases/latest/download/WorldHistory-Atlas.apk)
-· [страница релиза](https://github.com/AlfaGideon/WorldHistory/releases/latest)
-· [файл в репозитории](WorldHistory-Atlas.apk)
+**Скачать APK:**
+[`WorldHistory-Atlas.apk`](https://raw.githubusercontent.com/AlfaGideon/WorldHistory/main/WorldHistory-Atlas.apk)
+· [страница файла на GitHub](https://github.com/AlfaGideon/WorldHistory/blob/main/WorldHistory-Atlas.apk)
 
-Размер ~0.6 МБ, `minSdk 24` — Android 7.0 и новее. Ссылка `releases/latest/download/...` не меняется от версии к версии, поэтому её удобно сохранить в закладки.
+Размер ~0.6 МБ, `minSdk 24` — Android 7.0 и новее. Файл лежит в корне репозитория (ветка `main`) и всегда соответствует последней версии приложения.
 
 Как установить:
 
