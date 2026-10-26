@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="assets/logo.png" width="128" height="128" alt="WorldHistory Atlas" />
+</p>
+
 # WorldHistory Atlas
 
 Исследовательский инструмент по мировой истории: глубокие досье по странам, эпохам, войнам и спорным темам с сопоставлением источников, проверкой фактов и разбором популярных мифов.
 
-Работает как веб-приложение (PWA, офлайн) и как **нативное Android-приложение** (`WorldHistory-Atlas.apk`, готовый файл в корне репозитория).
+Работает как веб-приложение (PWA, офлайн) и как **нативное Android-приложение** (`WorldHistory-Atlas.apk` — файл лежит в корне репозитория и прикреплён к релизам).
 
 ---
 
@@ -25,7 +29,12 @@
 
 ## Установка на телефон (Android)
 
-Готовый файл: **[`WorldHistory-Atlas.apk`](WorldHistory-Atlas.apk)** (в корне репозитория, ~1 МБ, minSdk 24 — Android 7.0+).
+**Скачать APK (всегда последняя версия):**
+[`WorldHistory-Atlas.apk`](https://github.com/AlfaGideon/WorldHistory/releases/latest/download/WorldHistory-Atlas.apk)
+· [страница релиза](https://github.com/AlfaGideon/WorldHistory/releases/latest)
+· [файл в репозитории](WorldHistory-Atlas.apk)
+
+Размер ~0.6 МБ, `minSdk 24` — Android 7.0 и новее. Ссылка `releases/latest/download/...` не меняется от версии к версии, поэтому её удобно сохранить в закладки.
 
 Как установить:
 
@@ -33,6 +42,9 @@
 2. Откройте файл на устройстве → «Установить».
 3. Android попросит разрешить установку из неизвестных источников для вашего проводника/мессенджера — разрешите.
 4. Готово: ярлык **WorldHistory** появится в меню приложений.
+
+> Если телефон пишет «Приложение не установлено» при обновлении — удалите старую версию: сборки подписываются разными ключами.
+> Для постоянной подписи задайте свой keystore: `WH_KEYSTORE=~/my.jks WH_KEY_ALIAS=worldhistory WH_KEYSTORE_PASSWORD=*** WH_KEY_PASSWORD=*** npm run android:build`.
 
 Через компьютер:
 
@@ -49,7 +61,13 @@ npm install
 npm run android:build      # результат: WorldHistory-Atlas.apk
 ```
 
-Скрипт сам скачивает нужные инструменты в `.cache/android-tools` (aapt2, android.jar, d8, ecj, apksigner) — Android SDK и Gradle не нужны. Требуется только Java 17+ и Node.js 22.5+.
+Скрипт сам скачивает нужные инструменты в `.cache/android-tools` (aapt2, android.jar, d8, ecj, apksigner), а при отсутствии Java — портативную JRE (`scripts/fetch-android-tools.sh`) — Android SDK и Gradle не нужны.
+
+Проверить, что упакованное приложение стартует в WebView, можно одной командой:
+
+```bash
+npm run android:smoke     # загружает dist/index.html как file:// и проверяет отрисовку
+```
 
 Структура нативной части:
 
@@ -60,8 +78,24 @@ android/
   java/com/worldhistory/atlas/MainActivity.java   # WebView + мост для шеринга/печати/файлов
 scripts/
   build-android.mjs         # сборка, выравнивание и подпись APK
+  build-icons.sh            # нарезка логотипа в иконки PWA/Android
+  fetch-android-tools.sh    # скачивание aapt2, android.jar, d8, ecj, apksigner и JRE
+  smoke-android.mjs         # дымовой тест упакованного приложения
   zipkit.mjs                # ZIP-читатель/писатель с 4-байтовым выравниванием (аналог zipalign)
+assets/
+  logo.png                  # мастер-логотип 1024×1024 (прозрачный фон)
+  logo-source.png           # исходный рендер без обрезки фона
 ```
+
+### Логотип и иконки
+
+Мастер-файл — `assets/logo.png` (квадрат с прозрачным фоном). После его замены запустите:
+
+```bash
+bash scripts/build-icons.sh    # public/icons/*.png, android/res/mipmap-*/ic_launcher.png, src/assets/brand-logo.png
+```
+
+Скрипт сам сделает все размеры для браузера и PWA (32–512), маскируемые версии (`*-maskable.png`, логотип на плотном фоне) и иконки лаунчера Android.
 
 ---
 

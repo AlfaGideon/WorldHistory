@@ -13,3 +13,6 @@ data/*.sqlite-wal
 android/.work/
 *.apk
 *.idsig
+
+# Релизный APK — исключение: файл нужен в репозитории, чтобы его можно было скачать
+!WorldHistory-Atlas.apk
