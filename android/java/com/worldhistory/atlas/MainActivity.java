@@ -108,6 +108,7 @@ public class MainActivity extends Activity {
         settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
         settings.setTextZoom(100);
         settings.setAllowFileAccess(true);
+        settings.setAllowFileAccessFromFileURLs(true);
         // The bundled app is served from file://; it must be able to query
         // Wikipedia / OpenAlex / Crossref (all CORS-friendly) for live research.
         settings.setAllowUniversalAccessFromFileURLs(true);
@@ -315,10 +316,41 @@ public class MainActivity extends Activity {
             // Only the main frame matters: missing assets cannot be recovered by
             // the user, but a failed live request is handled inside the web app.
             if (request != null && !request.isForMainFrame()) return;
+            String url = request != null && request.getUrl() != null ? request.getUrl().toString() : START_URL;
+            int code = error != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getErrorCode() : -1;
+            String description = error != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    ? String.valueOf(error.getDescription())
+                    : "unknown error";
+            // Если не открылась даже стартовая страница, показываем понятный экран
+            // вместо голой ошибки WebView.
+            if (request == null || url.startsWith(ASSET_PREFIX)) {
+                showDiagnostics(url, description, code);
+                return;
+            }
             if (!MainActivity.this.isOnline()) {
                 Toast.makeText(MainActivity.this, R.string.offline_hint, Toast.LENGTH_LONG).show();
             }
         }
+    }
+
+    /** Friendly, self-explanatory screen for an unrecoverable loading error. */
+    private void showDiagnostics(String url, String description, int code) {
+        String asset = "/";
+        if (url != null && url.startsWith(ASSET_PREFIX)) {
+            asset = url.substring(ASSET_PREFIX.length());
+        }
+        String html = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+                + "<style>body{margin:0;padding:28px;background:#080D1B;color:#E8EDF7;"
+                + "font-family:sans-serif;line-height:1.5}"
+                + "h1{font-size:19px;margin:0 0 12px;color:#FFD479}"
+                + "code{background:#12203A;padding:2px 5px;border-radius:5px;font-size:13px;word-break:break-all}"
+                + "p{margin:0 0 10px;font-size:14px;color:#A9B6CC}</style></head><body>"
+                + "<h1>Не удалось открыть встроенное приложение</h1>"
+                + "<p>Файл <code>" + asset + "</code> не найден в APK-архиве.</p>"
+                + "<p>Код: " + code + " — " + description + "</p>"
+                + "<p>Переустановите приложение последней сборкой: файлы веб-приложения должны "
+                + "находиться в папке <code>assets/www</code>.</p></body></html>";
+        webView.loadDataWithBaseURL(null, html, "text/html; charset=utf-8", null, null);
     }
 
     private final class LocalWebChromeClient extends WebChromeClient {

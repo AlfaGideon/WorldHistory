@@ -6,7 +6,7 @@
 
 Исследовательский инструмент по мировой истории: глубокие досье по странам, эпохам, войнам и спорным темам с сопоставлением источников, проверкой фактов и разбором популярных мифов.
 
-Работает как веб-приложение (PWA, офлайн) и как **нативное Android-приложение** (`WorldHistory-Atlas.apk` — файл лежит в корне репозитория и прикреплён к релизам).
+Работает как веб-приложение (PWA, офлайн) и как **нативное Android-приложение** (`WorldHistory-Atlas.apk` собирается одной командой и прикрепляется к релизам GitHub).
 
 ---
 
@@ -23,17 +23,23 @@
 | **Офлайн и «Сохранённое»** | Досье сохраняются на устройстве (localStorage + service worker) и читаются без сети. |
 | **Мобильный UX** | Mobile-first вёрстка, нижняя панель навигации, безопасные зоны (safe-area), крупные тач-цели, тёмная и светлая темы. |
 | **Экспорт** | Markdown, печать/PDF (в приложении — через системную печать), публичный шеринг, копирование ссылки. |
-| **Android-приложение** | Подписанный APK собирается одной командой без Android SDK и Gradle. |
+| **Android-приложение** | Подписанный APK собирается одной командой без Android SDK и Gradle; сборка и отдельный smoke-тест проверяют, что веб-файлы упакованы по путям `assets/www/…`, понятным WebView. |
+| **Современная иконка** | Единый мастер-логотип (`assets/logo-master.png`) нарезается во все размеры PWA и Android, включая adaptive icon для Android 8+ и maskable-варианты. |
 
 ---
 
 ## Установка на телефон (Android)
 
-**Скачать APK:**
-[`WorldHistory-Atlas.apk`](https://raw.githubusercontent.com/AlfaGideon/WorldHistory/main/WorldHistory-Atlas.apk)
-· [страница файла на GitHub](https://github.com/AlfaGideon/WorldHistory/blob/main/WorldHistory-Atlas.apk)
+**Скачать APK (последняя версия):**
+[`WorldHistory-Atlas.apk`](https://github.com/AlfaGideon/WorldHistory/releases/latest/download/WorldHistory-Atlas.apk)
+· [все релизы и что изменилось](https://github.com/AlfaGideon/WorldHistory/releases)
 
-Размер ~0.6 МБ, `minSdk 24` — Android 7.0 и новее. Файл лежит в корне репозитория (ветка `main`) и всегда соответствует последней версии приложения.
+Размер ~1.3 МБ, `minSdk 24` — Android 7.0 и новее.
+
+> APK прикреплён к **релизу** на GitHub: бинарные файлы не коммитятся в репозиторий
+> (они перечислены в `.gitignore`), поэтому ссылки вида
+> `github.com/…/blob/main/WorldHistory-Atlas.apk` всегда будут отдавать 404.
+> Скачивайте файл из раздела **Releases** — ссылка выше всегда ведёт на свежую сборку.
 
 Как установить:
 
@@ -65,8 +71,15 @@ npm run android:build      # результат: WorldHistory-Atlas.apk
 Проверить, что упакованное приложение стартует в WebView, можно одной командой:
 
 ```bash
-npm run android:smoke     # загружает dist/index.html как file:// и проверяет отрисовку
+npm run android:smoke     # распаковывает assets/www из APK и запускает приложение в WebView-окружении
 ```
+
+Smoke-тест проверяет именно то, из-за чего приложение может не открыться на телефоне:
+файлы веб-сборки лежат по путям `assets/www/…` (иначе WebView выдаёт
+`net::ERR_FILE_NOT_FOUND` на `file:///android_asset/www/index.html`), все ссылки из
+`index.html` резолвятся внутри APK, приложение монтируется и навигация работает
+через hash-роуты. Аналогичная проверка встроена и в саму сборку — `npm run android:build`
+не отдаст APK, если внутри чего-то не хватает.
 
 Структура нативной части:
 
