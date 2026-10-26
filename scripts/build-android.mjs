@@ -175,6 +175,67 @@ function ensureKeystore(tools) {
   return { path: keystore, alias: 'androiddebugkey', storePass: 'android', keyPass: 'android', storeType: 'PKCS12' };
 }
 
+/**
+ * Проверяет готовый APK «глазами Android»: файлы, которые WebView реально
+ * откроет по `file:///android_asset/…`, должны лежать в папке `assets/`.
+ * Если чего-то нет — сборка падает, а не отдаёт пользователю белый экран.
+ */
+function verifyApk(apkPath) {
+  const zip = readZip(apkPath);
+  // readZip отдаёт полезную нагрузку «как в архиве», поэтому сжатые записи
+  // нужно развернуть, иначе проверка будет читать бинарный мусор.
+  const content = (entry) => (entry.method === 8 ? zlib.inflateRawSync(entry.data) : entry.data);
+  const byName = new Map(zip.map((entry) => [entry.name, entry]));
+
+  const required = [
+    'AndroidManifest.xml',
+    'classes.dex',
+    'resources.arsc',
+    'assets/www/index.html',
+  ];
+  const missing = required.filter((name) => !byName.has(name));
+  if (missing.length) {
+    throw new Error(`В APK отсутствуют обязательные файлы: ${missing.join(', ')}`);
+  }
+
+  const html = content(byName.get('assets/www/index.html')).toString('utf8');
+  const references = [...html.matchAll(/(?:src|href)="(\.\/)?([^"#:?]+\.[a-z0-9]+)"/gi)]
+    .map((match) => match[2])
+    .filter((ref) => !/^(https?:)?\/\//i.test(ref));
+
+  const brokenRefs = [...new Set(references)].filter((ref) => !byName.has(`assets/www/${ref}`));
+  if (brokenRefs.length) {
+    throw new Error(`index.html ссылается на файлы, которых нет в APK: ${brokenRefs.join(', ')}`);
+  }
+
+  // Каждый файл веб-сборки должен попасть в APK именно по тому пути, по которому
+  // его запросит WebView (`file:///android_asset/www/…`).
+  const missingFromApk = [];
+  const walk = (dir, relative = '') => {
+    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+      const rel = relative ? `${relative}/${item.name}` : item.name;
+      const full = path.join(dir, item.name);
+      if (item.isDirectory()) walk(full, rel);
+      else if (!byName.has(`assets/www/${rel}`)) missingFromApk.push(rel);
+    }
+  };
+  walk(DIST);
+  if (missingFromApk.length) {
+    throw new Error(`Файлы сборки не попали в APK (assets/www): ${missingFromApk.join(', ')}`);
+  }
+
+  const webFiles = zip.filter((entry) => entry.name.startsWith('assets/www/'));
+  const bundleSize = webFiles.reduce((sum, entry) => sum + entry.data.length, 0);
+  const dexSize = byName.get('classes.dex').data.length;
+  const icons = zip.filter((entry) => /^res\/mipmap-/.test(entry.name)).length;
+
+  console.log('  проверка APK:');
+  console.log(`    assets/www: ${webFiles.length} файлов, ${(bundleSize / 1024).toFixed(0)} КБ`);
+  console.log(`    ссылки из index.html: ${new Set(references).size} (все найдены)`);
+  console.log(`    classes.dex: ${(dexSize / 1024).toFixed(0)} КБ, иконок: ${icons}`);
+  return true;
+}
+
 function main() {
   console.log('1/6 — собираем веб-приложение (режим Android: обычный script, относительные пути)…');
   run('npx', ['vite', 'build', '--mode', 'android'], { cwd: ROOT });
@@ -247,7 +308,9 @@ function main() {
     data: fs.readFileSync(dexPath),
     compress: true,
   });
-  collectFiles(entries, DIST, 'www');
+  // ВАЖНО: `file:///android_asset/` указывает на папку `assets/` внутри APK,
+  // поэтому веб-сборка должна лежать по пути `assets/www/…`.
+  collectFiles(entries, DIST, 'assets/www');
 
   const aligned = path.join(WORK, 'aligned.apk');
   writeZipAligned(aligned, entries, 4);
@@ -265,6 +328,8 @@ function main() {
     '--v3-signing-enabled', 'true',
     aligned,
   ]);
+
+  verifyApk(OUTPUT_APK);
 
   const size = (fs.statSync(OUTPUT_APK).size / 1024 / 1024).toFixed(2);
   console.log(`\n✓ APK готов: ${path.relative(ROOT, OUTPUT_APK)} (${size} МБ)`);
