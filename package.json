@@ -14,7 +14,10 @@
     "build": "vite build",
     "lint": "eslint .",
     "test": "node --test server/*.test.js server/services/*.test.js server/db/*.test.js && vitest run src",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "android:build": "node scripts/build-android.mjs",
+    "build:android": "vite build --mode android",
+    "preview:android": "vite preview --mode android"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

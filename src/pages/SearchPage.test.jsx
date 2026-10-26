@@ -43,7 +43,7 @@ describe('SearchPage', () => {
       ok: true,
       json: async () => payload,
     }));
-    render(<SearchPage go={vi.fn()} />);
+    render(<SearchPage go={vi.fn()} initialQuery="Косово" />);
 
     await waitFor(() => expect(screen.getByText('Найдено:')).toBeInTheDocument());
 
@@ -63,7 +63,7 @@ describe('SearchPage', () => {
       ok: true,
       json: async () => ({ ...payload, results: [] }),
     }));
-    render(<SearchPage go={vi.fn()} />);
+    render(<SearchPage go={vi.fn()} initialQuery="Косово" />);
 
     await waitFor(() => expect(screen.getByText('Найдено:')).toBeInTheDocument());
 

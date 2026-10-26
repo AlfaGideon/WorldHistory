@@ -1,17 +1,35 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0b1020" />
+    <meta name="color-scheme" content="dark light" />
     <meta
       name="description"
-      content="WorldHistory — красивое многостраничное приложение для поиска и изучения мировой истории, стран, эпох и военных конфликтов."
+      content="WorldHistory — исследователь мировой истории: досье по странам, эпохам и конфликтам, сопоставление источников, проверка фактов и популярных мифов. Работает офлайн."
     />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="WorldHistory" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>WorldHistory Atlas</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Register the service worker on secure origins only (skip file:// in the
+      // packaged app and http during development).
+      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register(new URL('./sw.js', window.location.href)).catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>

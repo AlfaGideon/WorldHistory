@@ -7,3 +7,9 @@ dist/
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
+
+# Инструменты и промежуточные файлы сборки Android (скачиваются автоматически)
+.cache/
+android/.work/
+*.apk
+*.idsig
