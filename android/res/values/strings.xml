@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WorldHistory</string>
+    <string name="app_subtitle">Атлас и исследования</string>
+    <string name="exit_hint">Нажмите «Назад» ещё раз, чтобы выйти</string>
+    <string name="saved_to">Файл сохранён: %1$s</string>
+    <string name="no_browser">Не удалось открыть ссылку</string>
+    <string name="offline_hint">Нет соединения. Доступны сохранённые досье и локальный каталог.</string>
+</resources>
