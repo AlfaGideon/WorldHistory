@@ -36,25 +36,35 @@ const run = (command, args, options = {}) => {
   }
 };
 
-/** Finds `java` (PATH or the bundled JDK), plus keytool next to it. */
+/** Finds `java` (PATH, cached JRE or JDK), plus keytool next to it. */
 function findJava() {
+  const exe = (name) => (os.platform() === 'win32' ? `${name}.exe` : name);
+  const wrap = (candidate) => {
+    const bin = path.dirname(candidate);
+    return { java: candidate, keytool: path.join(bin, exe('keytool')) };
+  };
+
   const direct = spawnSync('java', ['-version'], { encoding: 'utf8' });
   if (!direct.error) return { java: 'java', keytool: 'keytool' };
+
   const candidates = [
-    process.env.JAVA_HOME && path.join(process.env.JAVA_HOME, 'bin', os.platform() === 'win32' ? 'java.exe' : 'java'),
+    path.join(CACHE, 'jre', 'bin', exe('java')),
+    process.env.JAVA_HOME && path.join(process.env.JAVA_HOME, 'bin', exe('java')),
     '/usr/bin/java',
     '/usr/lib/jvm/default-java/bin/java',
   ].filter(Boolean);
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      const bin = path.dirname(candidate);
-      return {
-        java: candidate,
-        keytool: path.join(bin, os.platform() === 'win32' ? 'keytool.exe' : 'keytool'),
-      };
-    }
+    if (fs.existsSync(candidate)) return wrap(candidate);
   }
-  throw new Error('Не найден Java. Установите JDK 17+ и повторите сборку.');
+
+  // Последняя надежда: скачиваем портативную JRE скриптом (Linux/macOS).
+  const fetcher = path.join(ROOT, 'scripts', 'fetch-android-tools.sh');
+  if (os.platform() !== 'win32' && fs.existsSync(fetcher)) {
+    console.log('• Java не найдена — скачиваем портативную JRE…');
+    execFileSync('bash', [fetcher], { stdio: 'inherit' });
+    if (fs.existsSync(candidates[0])) return wrap(candidates[0]);
+  }
+  throw new Error('Не найден Java. Установите JDK 17+ и повторите сборку (или запустите scripts/fetch-android-tools.sh).');
 }
 
 /** Downloads (once) the build tools we need: android.jar, aapt2, ecj, d8, apksigner. */
@@ -127,10 +137,27 @@ function extractFromZip(zipPath, entryName, targetPath) {
 
 const inflate = (buffer) => zlib.inflateRawSync(buffer);
 
-/** Creates (once) the debug signing key. */
+/**
+ * Signing key. By default a throw-away debug key is created in the cache;
+ * for a real release point WH_KEYSTORE at your own keystore:
+ *   WH_KEYSTORE=~/my.jks WH_KEY_ALIAS=worldhistory \
+ *   WH_KEYSTORE_PASSWORD=*** WH_KEY_PASSWORD=*** npm run android:build
+ */
 function ensureKeystore(tools) {
+  const envStore = process.env.WH_KEYSTORE;
+  if (envStore && fs.existsSync(envStore)) {
+    return {
+      path: envStore,
+      alias: process.env.WH_KEY_ALIAS || 'androiddebugkey',
+      storePass: process.env.WH_KEYSTORE_PASSWORD || 'android',
+      keyPass: process.env.WH_KEY_PASSWORD || process.env.WH_KEYSTORE_PASSWORD || 'android',
+      storeType: process.env.WH_KEYSTORE_TYPE || 'PKCS12',
+    };
+  }
   const keystore = path.join(CACHE, 'debug.keystore');
-  if (fs.existsSync(keystore)) return keystore;
+  if (fs.existsSync(keystore)) {
+    return { path: keystore, alias: 'androiddebugkey', storePass: 'android', keyPass: 'android', storeType: 'PKCS12' };
+  }
   const { keytool } = findJava();
   console.log('• Создаём отладочный ключ подписи…');
   execFileSync(keytool, [
@@ -145,7 +172,7 @@ function ensureKeystore(tools) {
     '-keypass', 'android',
     '-dname', 'CN=WorldHistory Debug, OU=Arena, O=WorldHistory, L=SPb, ST=SPb, C=RU',
   ], { stdio: 'pipe' });
-  return keystore;
+  return { path: keystore, alias: 'androiddebugkey', storePass: 'android', keyPass: 'android', storeType: 'PKCS12' };
 }
 
 function main() {
@@ -227,11 +254,11 @@ function main() {
 
   run(java, [
     '-jar', tools.apksignerJar, 'sign',
-    '--ks', keystore,
-    '--ks-type', 'PKCS12',
-    '--ks-key-alias', 'androiddebugkey',
-    '--ks-pass', 'pass:android',
-    '--key-pass', 'pass:android',
+    '--ks', keystore.path,
+    '--ks-type', keystore.storeType,
+    '--ks-key-alias', keystore.alias,
+    '--ks-pass', `pass:${keystore.storePass}`,
+    '--key-pass', `pass:${keystore.keyPass}`,
     '--out', OUTPUT_APK,
     '--v1-signing-enabled', 'true',
     '--v2-signing-enabled', 'true',

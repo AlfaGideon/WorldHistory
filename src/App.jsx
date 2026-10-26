@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  BookMarked, Compass, Flag, Globe2, Library, Menu, Moon, Search, Settings,
+  BookMarked, Compass, Flag, Library, Menu, Moon, Search, Settings,
   Sun, Swords, Timeline, WifiOff, X,
 } from 'lucide-react';
+import brandLogo from './assets/brand-logo.png';
 import { getHealth } from './api/client';
 import HomePage from './pages/HomePage';
 import SearchPage from './pages/SearchPage';
@@ -118,7 +119,7 @@ export default function App() {
           <X size={20} />
         </button>
         <div className="brand" onClick={() => go('home')} role="button" tabIndex={0}>
-          <div className="brand-mark"><Globe2 size={26} /></div>
+          <img className="brand-logo" src={brandLogo} alt="WorldHistory Atlas" width="46" height="46" />
           <div className="brand-copy">
             <strong>WorldHistory</strong>
             <span>Atlas & Research</span>
@@ -145,6 +146,7 @@ export default function App() {
       <main>
         <header className="topbar">
           <button className="menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Открыть меню"><Menu /></button>
+          <img className="topbar-logo" src={brandLogo} alt="" width="30" height="30" />
           <div className="topbar-title">История мира • страны • войны • источники</div>
           <div className="topbar-actions">
             <ConnectionBadge go={go} />
